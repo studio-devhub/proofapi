@@ -1,6 +1,6 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 import { useSpellCheck } from "../hooks/useSpellCheck";
 import { SpellCheckExtension, applyMatches } from "../extensions/SpellCheckExtension";
@@ -32,6 +32,8 @@ export default function RichTextEditor() {
     y: number;
   } | null>(null);
 
+  const matchesRef = useRef<Match[]>([]);
+
   // ── Editor setup ──────────────────────────────────────
   const editor = useEditor({
     extensions: [
@@ -53,25 +55,61 @@ export default function RichTextEditor() {
   useEffect(() => {
     if (editor && result) {
       applyMatches(editor, result.matches);
+      matchesRef.current = result.matches;
     }
   }, [editor, result]);
+
+  // ── Cmd+. → show suggestion for word under cursor ─────
+  useEffect(() => {
+    if (!editor) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== ".") return;
+      e.preventDefault();
+
+      const { from } = editor.state.selection;
+      // +1 offset because ProseMirror positions start at 1, LT offsets at 0
+      const pos = from - 1;
+      const match = matchesRef.current.find(
+        (m) => pos >= m.offset && pos < m.offset + m.length
+      ) ?? matchesRef.current.find(
+        // fallback: cursor is right after the word (end boundary)
+        (m) => pos === m.offset + m.length
+      );
+      if (!match) return;
+
+      // Position popup near the cursor caret
+      // Anchor popup to start of the matched word, not cursor position
+      const wordStart = editor.view.coordsAtPos(match.offset + 1);
+      setPopup({ match, x: wordStart.left, y: wordStart.bottom });
+    };
+
+    const dom = editor.view.dom;
+    dom.addEventListener("keydown", handleKeyDown);
+    return () => dom.removeEventListener("keydown", handleKeyDown);
+  }, [editor]);
 
   // ── Suggestion popup ──────────────────────────────────
   const handleClick = useCallback((e: React.MouseEvent) => {
     const el = e.target as HTMLElement;
     const raw = el.getAttribute("data-match");
     if (!raw) { setPopup(null); return; }
-    setPopup({ match: JSON.parse(raw), x: e.clientX, y: e.clientY });
+    const match: Match = JSON.parse(raw);
+    const rect = el.getBoundingClientRect();
+    setPopup({ match, x: rect.left, y: rect.bottom });
   }, []);
 
   const applySuggestion = useCallback((replacement: string) => {
     if (!editor || !popup) return;
     const { offset, length } = popup.match;
+    // ProseMirror positions are 1-based; LT offsets are 0-based
+    const from = offset + 1;
+    const to   = offset + length + 1;
     editor
       .chain()
       .focus()
-      .deleteRange({ from: offset, to: offset + length })
-      .insertContentAt(offset, replacement)
+      .deleteRange({ from, to })
+      .insertContentAt(from, replacement)
       .run();
     setPopup(null);
   }, [editor, popup]);
@@ -124,6 +162,7 @@ export default function RichTextEditor() {
       </div>
 
       {/* Legend */}
+      <div className="flex items-center justify-between">
       <div className="flex gap-4">
         {[
           { cls: "sp-spell",   label: "Spelling"    },
@@ -136,6 +175,10 @@ export default function RichTextEditor() {
             <span className="text-xs text-gray-400">{label}</span>
           </div>
         ))}
+      </div>
+        <span className="text-xs text-gray-400">
+          Click or <kbd className="px-1 py-0.5 rounded bg-gray-100 text-gray-500 font-mono text-xs">⌘.</kbd> for suggestions
+        </span>
       </div>
 
       {/* Suggestion popup */}

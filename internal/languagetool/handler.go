@@ -61,7 +61,7 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		req.Level = "default"
 	}
 
-	cacheKey := cache.BuildKey(cachePrefix, req.Language, req.Level, req.Text)
+	cacheKey := cache.BuildKey(cachePrefix, req.Language, req.Level, req.EnabledCategories, req.Text)
 
 	var cached CheckResponse
 	hit, err := h.redis.Get(r.Context(), cacheKey, &cached)

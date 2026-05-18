@@ -45,8 +45,12 @@ func (r *Redis) Close() error {
 	return r.client.Close()
 }
 
-func BuildKey(prefix, language, level, text string) string {
-	hash := sha256.Sum256([]byte(language + "|" + level + "|" + text))
+func BuildKey(parts ...string) string {
+	if len(parts) < 2 {
+		panic("BuildKey requires at least prefix and one key part")
+	}
+	prefix := parts[0]
+	hash := sha256.Sum256([]byte(strings.Join(parts[1:], "|")))
 	return fmt.Sprintf("%s:%x", prefix, hash)
 }
 

@@ -194,9 +194,17 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 	if lang == "" {
 		lang = "en-US"
 	}
+	level := msg.Level
+	if level == "" {
+		level = "picky"
+	}
+	enabledCategories := msg.EnabledCategories
+	if enabledCategories == "" {
+		enabledCategories = "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY,COMPOUNDING,MISC"
+	}
 
 	// Cache hit
-	cacheKey := cache.BuildKey(cachePrefix, lang, "default", msg.Text)
+	cacheKey := cache.BuildKey(cachePrefix, lang, level, enabledCategories, msg.Text)
 	var cached languagetool.CheckResponse
 	hit, err := c.redis.Get(c.ctx, cacheKey, &cached)
 	if err != nil {
@@ -218,9 +226,13 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 
 	// LT check
 	result, err := c.lt.Check(c.ctx, languagetool.CheckRequest{
-		Text:     msg.Text,
-		Language: lang,
-		Level:    "default",
+		Text:               msg.Text,
+		Language:           lang,
+		Level:              level,
+		EnabledCategories:  enabledCategories,
+		DisabledCategories: msg.DisabledCategories,
+		EnabledRules:       msg.EnabledRules,
+		DisabledRules:      msg.DisabledRules,
 	})
 	if err != nil {
 		if c.ctx.Err() == nil {
@@ -229,7 +241,6 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 		return
 	}
 
-	// Cache store (async)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()

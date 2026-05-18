@@ -5,10 +5,15 @@ import "languagetool-backend/internal/languagetool"
 // ── Incoming (Client → Server) ────────────────────────────
 
 type IncomingMessage struct {
-	Type     string `json:"type"`
-	Text     string `json:"text"`
-	Language string `json:"language,omitempty"`
-	SeqID    int    `json:"seqId"` // client sequence — for ordering
+	Type               string `json:"type"`
+	Text               string `json:"text"`
+	Language           string `json:"language,omitempty"`
+	Level              string `json:"level,omitempty"`
+	EnabledCategories  string `json:"enabledCategories,omitempty"`
+	DisabledCategories string `json:"disabledCategories,omitempty"`
+	EnabledRules       string `json:"enabledRules,omitempty"`
+	DisabledRules      string `json:"disabledRules,omitempty"`
+	SeqID              int    `json:"seqId"`
 }
 
 // ── Outgoing (Server → Client) ────────────────────────────
