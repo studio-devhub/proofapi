@@ -65,7 +65,7 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Submits text to LanguageTool for analysis. Results are cached in Redis for 5 minutes.",
+                "description": "Submits text to LanguageTool for analysis. Results are cached in Redis for 5 minutes.\\n\\n**Maximum suggestions:** set `level=picky` and add `enabledCategories=STYLE,PUNCTUATION,TYPOGRAPHY,GRAMMAR,MISC,CASING`",
                 "consumes": [
                     "application/json"
                 ],
@@ -295,10 +295,31 @@
         "internal_languagetool.CheckRequest": {
             "type": "object",
             "properties": {
+                "disabledCategories": {
+                    "description": "Comma-separated category IDs to suppress",
+                    "type": "string"
+                },
+                "disabledRules": {
+                    "description": "Comma-separated rule IDs to suppress",
+                    "type": "string"
+                },
+                "enabledCategories": {
+                    "description": "Comma-separated category IDs to enable (e.g. \"STYLE,PUNCTUATION\")",
+                    "type": "string"
+                },
+                "enabledOnly": {
+                    "description": "When true, only the rules/categories in EnabledRules/EnabledCategories run",
+                    "type": "boolean"
+                },
+                "enabledRules": {
+                    "description": "Comma-separated rule IDs to enable on top of the active profile",
+                    "type": "string"
+                },
                 "language": {
                     "type": "string"
                 },
                 "level": {
+                    "description": "\"default\" | \"picky\" — picky enables extra style/punctuation rules",
                     "type": "string"
                 },
                 "text": {

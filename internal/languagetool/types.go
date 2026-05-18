@@ -3,7 +3,18 @@ package languagetool
 type CheckRequest struct {
 	Text     string `json:"text"`
 	Language string `json:"language"`
-	Level    string `json:"level"`
+	// "default" | "picky" — picky enables extra style/punctuation rules
+	Level string `json:"level"`
+	// Comma-separated rule IDs to enable on top of the active profile
+	EnabledRules string `json:"enabledRules,omitempty"`
+	// Comma-separated rule IDs to suppress
+	DisabledRules string `json:"disabledRules,omitempty"`
+	// Comma-separated category IDs to enable (e.g. "STYLE,PUNCTUATION")
+	EnabledCategories string `json:"enabledCategories,omitempty"`
+	// Comma-separated category IDs to suppress
+	DisabledCategories string `json:"disabledCategories,omitempty"`
+	// When true, only the rules/categories in EnabledRules/EnabledCategories run
+	EnabledOnly bool `json:"enabledOnly,omitempty"`
 }
 
 type CheckResponse struct {

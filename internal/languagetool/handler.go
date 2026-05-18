@@ -30,7 +30,7 @@ func NewHandler(client *Client, redis *cache.Redis, logger *slog.Logger) *Handle
 // Check performs grammar and spell checking on the provided text.
 //
 //	@Summary		Check text for grammar and spelling errors
-//	@Description	Submits text to LanguageTool for analysis. Results are cached in Redis for 5 minutes.
+//	@Description	Submits text to LanguageTool for analysis. Results are cached in Redis for 5 minutes.\n\n**Maximum suggestions:** set `level=picky` and add `enabledCategories=STYLE,PUNCTUATION,TYPOGRAPHY,GRAMMAR,MISC,CASING`
 //	@Tags			grammar
 //	@Accept			json
 //	@Produce		json
