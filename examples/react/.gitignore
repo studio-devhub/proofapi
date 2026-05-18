@@ -1,0 +1,6 @@
+
+# ── React example ─────────────────────────────────────────
+examples/react/.env
+examples/react/node_modules/
+examples/react/dist/
+examples/react/yarn.lock
