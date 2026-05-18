@@ -1,14 +1,21 @@
 # ProofAPI — Frontend Integration Guide
 
-This guide covers everything needed to integrate ProofAPI into a **React (Vite)** application.
+Complete integration guide for **React (Vite + TypeScript)** applications.
+
+> **Working example with TipTap rich text editor, VS Code-style suggestions, and real-time wavy underlines:** [`examples/react/`](examples/react/)
 
 ---
 
 ## Setup
 
-### 1. Environment Variables
+```bash
+cd examples/react
+cp .env.example .env   # add your API key
+yarn install
+yarn dev               # http://localhost:5173
+```
 
-Create a `.env` file in your React project root:
+### Environment Variables
 
 ```env
 VITE_PROOF_API_URL=http://localhost:4003
@@ -16,23 +23,24 @@ VITE_PROOF_API_KEY=your-api-key
 VITE_PROOF_WS_URL=ws://localhost:4003/v1/ws
 ```
 
-> **Production:** Replace with your deployed API URL and use `wss://` for WebSocket.
+> **Production:** use `https://` and `wss://` with your deployed domain.
 
 ---
 
-## Option 1 — REST API
-
-Best for: submit-on-button-click, form validation, document checking.
-
-### TypeScript Types
+## TypeScript Types
 
 ```typescript
 // src/types/proof.ts
 
 export interface CheckRequest {
   text: string;
-  language?: string; // default: "en-US"
-  level?: string;    // "default" | "picky"
+  language?: string;           // default: "en-US"
+  level?: string;              // "default" | "picky"
+  enabledCategories?: string;  // e.g. "GRAMMAR,SPELLING,STYLE"
+  disabledCategories?: string;
+  enabledRules?: string;
+  disabledRules?: string;
+  enabledOnly?: boolean;
 }
 
 export interface Match {
@@ -43,7 +51,7 @@ export interface Match {
   rule: {
     id: string;
     description: string;
-    issueType: string;
+    issueType: "misspelling" | "grammar" | "style" | "typographical" | string;
     category: { id: string; name: string };
   };
   context: { text: string; offset: number; length: number };
@@ -56,7 +64,19 @@ export interface CheckResponse {
   cached: boolean;
   cacheExpiresIn?: number;
 }
+
+export interface SpellCheckResult {
+  matches: Match[];
+  cached: boolean;
+  latencyMs: number;
+}
 ```
+
+---
+
+## Option 1 — REST API
+
+Best for: submit-on-click, form validation, document checking.
 
 ### API Client
 
@@ -93,6 +113,17 @@ export async function getLanguages(): Promise<{ code: string; longCode: string; 
 }
 ```
 
+### Maximum suggestions request
+
+```typescript
+await checkText({
+  text: 'Your text here...',
+  language: 'en-US',
+  level: 'picky',
+  enabledCategories: 'GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY,COMPOUNDING,MISC',
+});
+```
+
 ### React Hook
 
 ```typescript
@@ -102,19 +133,22 @@ import { checkText } from '@/lib/proofApi';
 import type { Match } from '@/types/proof';
 
 export function useProofCheck() {
-  const [matches, setMatches]   = useState<Match[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState<string | null>(null);
-  const [cached, setCached]     = useState(false);
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const [cached, setCached]   = useState(false);
 
   const check = useCallback(async (text: string, language = 'en-US') => {
     if (text.trim().length < 2) return;
-
     setLoading(true);
     setError(null);
-
     try {
-      const result = await checkText({ text, language });
+      const result = await checkText({
+        text,
+        language,
+        level: 'picky',
+        enabledCategories: 'GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY',
+      });
       setMatches(result.matches);
       setCached(result.cached);
     } catch (err) {
@@ -145,42 +179,138 @@ export function GrammarChecker() {
   const [text, setText] = useState('');
   const { matches, loading, error, cached, check, reset } = useProofCheck();
 
-  const handleCheck = () => check(text);
-
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value);
-    reset();
-  };
-
   return (
     <div>
       <textarea
         value={text}
-        onChange={handleChange}
+        onChange={(e) => { setText(e.target.value); reset(); }}
         placeholder="Enter text to check..."
         rows={6}
         style={{ width: '100%' }}
       />
-
-      <button onClick={handleCheck} disabled={loading || text.length < 2}>
+      <button onClick={() => check(text)} disabled={loading || text.length < 2}>
         {loading ? 'Checking...' : 'Check Grammar'}
       </button>
 
       {cached && <small> (from cache)</small>}
-
       {error && <p style={{ color: 'red' }}>{error}</p>}
-
-      {!loading && matches.length === 0 && text.length > 0 && (
-        <p style={{ color: 'green' }}>No issues found!</p>
-      )}
 
       {matches.map((match, i) => (
         <div key={i} style={{ borderLeft: '3px solid red', padding: '8px 12px', marginTop: 8 }}>
           <strong>{match.rule.category.name}</strong>
           <p>{match.message}</p>
-          <p>
-            Error: <code>{text.slice(match.offset, match.offset + match.length)}</code>
-          </p>
+          <p>Suggestions: {match.replacements.slice(0, 4).map(r => r.value).join(' · ')}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+---
+
+## Option 2 — WebSocket API
+
+Best for: real-time checking as the user types. The server debounces 150ms — no client-side debounce needed.
+
+> **WebSocket default:** if `level`/`enabledCategories` are omitted, the server automatically uses `level=picky` with all major categories for maximum accuracy.
+
+### WebSocket Hook
+
+```typescript
+// src/hooks/useSpellCheck.ts
+import { useEffect, useRef, useCallback, useState } from 'react';
+import type { SpellCheckResult } from '@/types/proof';
+
+type Status = 'connecting' | 'connected' | 'disconnected' | 'error';
+
+const WS_URL  = import.meta.env.VITE_PROOF_WS_URL  ?? 'ws://localhost:4003/v1/ws';
+const API_KEY = import.meta.env.VITE_PROOF_API_KEY ?? '';
+
+export function useSpellCheck() {
+  const wsRef        = useRef<WebSocket | null>(null);
+  const seqRef       = useRef(0);
+  const reconnectRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const [result, setResult]   = useState<SpellCheckResult | null>(null);
+  const [status, setStatus]   = useState<Status>('connecting');
+
+  const connect = useCallback(() => {
+    wsRef.current?.close();
+    const ws = new WebSocket(`${WS_URL}?api_key=${API_KEY}`);
+    wsRef.current = ws;
+
+    ws.onopen    = () => { setStatus('connected'); clearTimeout(reconnectRef.current); };
+    ws.onclose   = () => { setStatus('disconnected'); reconnectRef.current = setTimeout(connect, 2000); };
+    ws.onerror   = () => { setStatus('error'); ws.close(); };
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'result' && msg.payload) {
+        setResult({
+          matches:   msg.payload.matches   ?? [],
+          cached:    msg.payload.cached    ?? false,
+          latencyMs: msg.payload.latencyMs ?? 0,
+        });
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    connect();
+    return () => { clearTimeout(reconnectRef.current); wsRef.current?.close(); };
+  }, [connect]);
+
+  const check = useCallback((text: string, language = 'en-US') => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({
+      type: 'check',
+      text,
+      language,
+      // omit level/enabledCategories to use server defaults (picky + all categories)
+      seqId: ++seqRef.current,
+    }));
+  }, []);
+
+  const clearMatches = useCallback(() => setResult(null), []);
+
+  return { check, result, status, clearMatches };
+}
+```
+
+### Live Editor Component
+
+```tsx
+// src/components/LiveEditor.tsx
+import { useState, useCallback } from 'react';
+import { useSpellCheck } from '@/hooks/useSpellCheck';
+
+export function LiveEditor() {
+  const { result, status, check } = useSpellCheck();
+  const [text, setText] = useState('');
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setText(value);
+    if (value.trim().length >= 2) check(value);
+  }, [check]);
+
+  const matches = result?.matches ?? [];
+
+  return (
+    <div>
+      <span style={{ color: status === 'connected' ? 'green' : 'red' }}>
+        {status === 'connected' ? '● Connected' : '○ Connecting...'}
+      </span>
+      {result && <span> {result.latencyMs}ms {result.cached ? '⚡ cached' : ''}</span>}
+
+      <textarea value={text} onChange={handleChange} rows={8} style={{ width: '100%' }} />
+
+      <p>{matches.length > 0 ? `${matches.length} issue(s) found` : text.length >= 2 ? 'All good!' : ''}</p>
+
+      {matches.map((match, i) => (
+        <div key={i} style={{ borderLeft: '3px solid red', padding: '8px 12px', marginTop: 8 }}>
+          <strong>{match.rule.category.name}</strong>
+          <p>{match.message}</p>
           {match.replacements.length > 0 && (
             <p>Suggestions: {match.replacements.slice(0, 4).map(r => r.value).join(' · ')}</p>
           )}
@@ -193,221 +323,28 @@ export function GrammarChecker() {
 
 ---
 
-## Option 2 — WebSocket API
+## Option 3 — TipTap Rich Text Editor
 
-Best for: real-time checking as the user types (editor, text input, rich text).
+The [`examples/react/`](examples/react/) example shows full TipTap integration with:
 
-The server automatically debounces 150ms — no need to debounce on the frontend.
+- **Wavy underlines** — colour-coded by issue type (red=spelling, yellow=grammar, blue=style, orange=punctuation)
+- **VS Code-style suggestion popup** — dark theme, anchored to the word, keyboard navigable
+- **Cmd+.** (or **Ctrl+.**) shortcut to open suggestions at cursor position
+- **Click** on underlined word to open popup
+- **↑↓** navigate suggestions, **Enter** apply, **Esc** dismiss
+- **Auto-reconnect** WebSocket with exponential backoff
 
-### WebSocket Client Class
-
-```typescript
-// src/lib/ProofWSClient.ts
-import type { Match } from '@/types/proof';
-
-type ResultHandler = (matches: Match[], latencyMs: number, cached: boolean) => void;
-type StatusHandler = (connected: boolean) => void;
-
-export class ProofWSClient {
-  private ws: WebSocket | null = null;
-  private seq = 0;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private pingTimer: ReturnType<typeof setInterval> | null = null;
-  private destroyed = false;
-
-  constructor(
-    private readonly url: string,
-    private readonly apiKey: string,
-    private readonly handlers: {
-      onResult: ResultHandler;
-      onStatus?: StatusHandler;
-      onError?: (msg: string) => void;
-    }
-  ) {}
-
-  connect() {
-    if (this.destroyed) return;
-
-    this.ws = new WebSocket(`${this.url}?api_key=${this.apiKey}`);
-
-    this.ws.onopen = () => {
-      this.handlers.onStatus?.(true);
-      this.startPing();
-    };
-
-    this.ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data as string);
-      if (msg.type === 'result') {
-        this.handlers.onResult(
-          msg.payload.matches,
-          msg.payload.latencyMs,
-          msg.payload.cached
-        );
-      } else if (msg.type === 'error') {
-        this.handlers.onError?.(msg.error);
-      }
-    };
-
-    this.ws.onclose = () => {
-      this.handlers.onStatus?.(false);
-      this.stopPing();
-      if (!this.destroyed) {
-        this.reconnectTimer = setTimeout(() => this.connect(), 3000);
-      }
-    };
-
-    this.ws.onerror = () => this.ws?.close();
-  }
-
-  check(text: string, language = 'en-US') {
-    if (this.ws?.readyState !== WebSocket.OPEN) return;
-    this.ws.send(JSON.stringify({
-      type: 'check',
-      text,
-      language,
-      seqId: ++this.seq,
-    }));
-  }
-
-  destroy() {
-    this.destroyed = true;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.stopPing();
-    this.ws?.close();
-  }
-
-  private startPing() {
-    this.pingTimer = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ type: 'ping' }));
-      }
-    }, 30_000);
-  }
-
-  private stopPing() {
-    if (this.pingTimer) clearInterval(this.pingTimer);
-  }
-}
-```
-
-### React Hook for WebSocket
-
-```typescript
-// src/hooks/useProofWS.ts
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { ProofWSClient } from '@/lib/ProofWSClient';
-import type { Match } from '@/types/proof';
-
-export function useProofWS() {
-  const clientRef               = useRef<ProofWSClient | null>(null);
-  const [matches, setMatches]   = useState<Match[]>([]);
-  const [latencyMs, setLatency] = useState<number | null>(null);
-  const [connected, setConnected] = useState(false);
-
-  useEffect(() => {
-    const client = new ProofWSClient(
-      import.meta.env.VITE_PROOF_WS_URL,
-      import.meta.env.VITE_PROOF_API_KEY,
-      {
-        onResult: (m, latency) => {
-          setMatches(m);
-          setLatency(latency);
-        },
-        onStatus: setConnected,
-        onError: (err) => console.error('[ProofAPI]', err),
-      }
-    );
-
-    clientRef.current = client;
-    client.connect();
-
-    return () => client.destroy();
-  }, []);
-
-  const check = useCallback((text: string, language?: string) => {
-    clientRef.current?.check(text, language);
-  }, []);
-
-  return { matches, latencyMs, connected, check };
-}
-```
-
-### Live Editor Component
-
-```tsx
-// src/components/LiveEditor.tsx
-import { useState, useCallback } from 'react';
-import { useProofWS } from '@/hooks/useProofWS';
-
-export function LiveEditor() {
-  const { matches, latencyMs, connected, check } = useProofWS();
-  const [text, setText] = useState('');
-
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-    setText(value);
-    if (value.trim().length >= 2) check(value);
-  }, [check]);
-
-  return (
-    <div style={{ fontFamily: 'sans-serif', maxWidth: 680 }}>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontSize: 13, color: connected ? '#38a169' : '#e53e3e' }}>
-          {connected ? '● Connected' : '○ Connecting...'}
-        </span>
-        {latencyMs !== null && (
-          <span style={{ fontSize: 12, color: '#718096' }}>{latencyMs}ms</span>
-        )}
-      </div>
-
-      <textarea
-        value={text}
-        onChange={handleChange}
-        placeholder="Start typing — grammar is checked in real time..."
-        rows={8}
-        style={{ width: '100%', fontSize: 15, padding: 12, boxSizing: 'border-box' }}
-      />
-
-      <p style={{ color: matches.length > 0 ? '#e53e3e' : '#38a169', margin: '4px 0' }}>
-        {text.length < 2 ? '' : matches.length > 0 ? `${matches.length} issue(s) found` : 'All good!'}
-      </p>
-
-      {matches.map((match, i) => (
-        <div key={i} style={{
-          marginTop: 8, padding: '10px 14px',
-          borderLeft: '3px solid #e53e3e',
-          background: '#fff5f5', borderRadius: 4,
-        }}>
-          <strong style={{ fontSize: 13, color: '#c53030' }}>
-            {match.rule.category.name}
-          </strong>
-          <p style={{ margin: '4px 0', fontSize: 14 }}>{match.message}</p>
-          {match.replacements.length > 0 && (
-            <p style={{ margin: 0, fontSize: 13 }}>
-              Suggestions:{' '}
-              {match.replacements.slice(0, 4).map((r, j) => (
-                <code key={j} style={{
-                  marginRight: 6, padding: '2px 7px',
-                  background: '#ebf8ff', borderRadius: 3,
-                }}>
-                  {r.value}
-                </code>
-              ))}
-            </p>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
+```bash
+cd examples/react
+cp .env.example .env
+yarn install && yarn dev
 ```
 
 ---
 
-## Highlight Errors in Text
+## Highlight Errors in Plain Text
 
-Use `offset` + `length` to visually mark errors inside rendered text:
+Use `offset` + `length` from each match to render inline highlights:
 
 ```typescript
 // src/lib/highlight.ts
@@ -422,17 +359,11 @@ export function getSegments(text: string, matches: Match[]) {
     if (match.offset > cursor) {
       segments.push({ text: text.slice(cursor, match.offset) });
     }
-    segments.push({
-      text: text.slice(match.offset, match.offset + match.length),
-      match,
-    });
+    segments.push({ text: text.slice(match.offset, match.offset + match.length), match });
     cursor = match.offset + match.length;
   }
 
-  if (cursor < text.length) {
-    segments.push({ text: text.slice(cursor) });
-  }
-
+  if (cursor < text.length) segments.push({ text: text.slice(cursor) });
   return segments;
 }
 ```
@@ -442,20 +373,20 @@ export function getSegments(text: string, matches: Match[]) {
 import { getSegments } from '@/lib/highlight';
 import type { Match } from '@/types/proof';
 
+const UNDERLINE: Record<string, string> = {
+  misspelling:   'underline wavy #ef4444',
+  grammar:       'underline wavy #eab308',
+  style:         'underline wavy #3b82f6',
+  typographical: 'underline wavy #f97316',
+};
+
 export function HighlightedText({ text, matches }: { text: string; matches: Match[] }) {
   return (
-    <p style={{ lineHeight: 1.7, fontSize: 15 }}>
+    <p style={{ lineHeight: 1.7 }}>
       {getSegments(text, matches).map((seg, i) =>
         seg.match ? (
-          <mark
-            key={i}
-            title={seg.match.message}
-            style={{
-              background: 'transparent',
-              borderBottom: '2px solid #e53e3e',
-              cursor: 'help',
-            }}
-          >
+          <mark key={i} title={seg.match.message}
+            style={{ background: 'transparent', textDecoration: UNDERLINE[seg.match.rule.issueType] ?? 'underline wavy #888' }}>
             {seg.text}
           </mark>
         ) : (
@@ -466,29 +397,6 @@ export function HighlightedText({ text, matches }: { text: string; matches: Matc
   );
 }
 ```
-
----
-
-## Suggested File Structure
-
-```text
-src/
-├── types/
-│   └── proof.ts           # TypeScript interfaces
-├── lib/
-│   ├── proofApi.ts        # REST client
-│   ├── ProofWSClient.ts   # WebSocket client class
-│   └── highlight.ts       # Text highlight utility
-├── hooks/
-│   ├── useProofCheck.ts   # REST hook
-│   └── useProofWS.ts      # WebSocket hook
-└── components/
-    ├── GrammarChecker.tsx  # Submit-on-click checker
-    ├── LiveEditor.tsx      # Real-time WebSocket editor
-    └── HighlightedText.tsx # Inline error highlighting
-```
-
-> **Working example with TipTap rich text editor:** `examples/react/` in the repo root.
 
 ---
 
@@ -530,7 +438,10 @@ Full list: `GET /v1/languages`
 | Use Case | Approach |
 | -------- | -------- |
 | Check on button click | REST `POST /v1/check` via `useProofCheck` |
-| Check as user types | WebSocket via `useProofWS` |
+| Real-time as user types | WebSocket via `useSpellCheck` |
+| Maximum suggestions | `level=picky` + `enabledCategories=GRAMMAR,SPELLING,STYLE,...` |
+| Rich text editor | TipTap example in `examples/react/` |
 | Highlight errors inline | `getSegments()` + `HighlightedText` |
-| List available languages | REST `GET /v1/languages` |
-| Monitor API health | REST `GET /v1/health` |
+| List available languages | `GET /v1/languages` |
+| Monitor API health | `GET /v1/health` |
+| Explore API interactively | Swagger UI at `/docs/index.html` |

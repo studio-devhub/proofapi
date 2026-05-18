@@ -1,17 +1,20 @@
 # ProofAPI
 
-A high-performance, production-ready grammar and spell-checking API built with Go. Wraps the open-source [LanguageTool](https://languagetool.org) engine and exposes a clean REST + WebSocket API with Redis caching, API key authentication, and rate limiting — all orchestrated via Docker Compose.
+A high-performance, production-ready grammar and spell-checking API built with Go. Wraps the open-source [LanguageTool](https://languagetool.org) engine and exposes a clean REST + WebSocket API with Redis caching, API key authentication, rate limiting, and Swagger UI — all orchestrated via Docker Compose.
 
 ---
 
 ## Features
 
-- **REST API** — single endpoint to check grammar and spelling
-- **WebSocket API** — real-time checking with debounce (ideal for editors and live input)
+- **REST API** — check grammar, spelling, style, punctuation in one request
+- **WebSocket API** — real-time checking as the user types (150ms server-side debounce)
+- **Maximum accuracy mode** — `level=picky` + all major categories enabled by default on WebSocket
+- **Fine-grained rule control** — enable/disable specific rules or categories per request
 - **Redis caching** — identical requests served in <1ms after first check
+- **Swagger UI** — interactive API docs at `/docs/index.html`
 - **API key authentication** — all endpoints protected
 - **Rate limiting** — per-IP request throttling with automatic cleanup
-- **NGram support** — optional 8GB language model for significantly improved accuracy
+- **NGram support** — optional 14GB language model for context-aware accuracy
 - **50+ languages** — English, French, German, Spanish, Arabic, Chinese, and more
 - **Health endpoint** — real-time status of all services
 - **One-command setup** — `make setup` installs all dependencies and starts the stack
@@ -26,7 +29,8 @@ A high-performance, production-ready grammar and spell-checking API built with G
 | HTTP Router | [go-chi/chi v5](https://github.com/go-chi/chi) |
 | WebSocket | [gorilla/websocket](https://github.com/gorilla/websocket) |
 | Cache | [Redis 7](https://redis.io) via [go-redis/v9](https://github.com/redis/go-redis) |
-| Grammar Engine | [LanguageTool](https://languagetool.org) (erikvl87/languagetool Docker image) |
+| Grammar Engine | [LanguageTool](https://languagetool.org) (erikvl87/languagetool) |
+| API Docs | [swaggo/swag](https://github.com/swaggo/swag) — OpenAPI 3.0 + Swagger UI |
 | Reverse Proxy | [Nginx](https://nginx.org) (optional, production profile) |
 | Containerization | [Docker](https://docker.com) + [Docker Compose](https://docs.docker.com/compose/) |
 | Testing | [testify](https://github.com/stretchr/testify), [miniredis](https://github.com/alicebob/miniredis) |
@@ -39,8 +43,8 @@ A high-performance, production-ready grammar and spell-checking API built with G
 Client
   │
   ├── REST  ──► POST /v1/check
-  │
-  └── WS   ──► GET  /v1/ws
+  ├── WS    ──► GET  /v1/ws
+  └── Docs  ──► GET  /docs
                       │
               ┌───────▼────────┐
               │   Go API (chi) │
@@ -50,14 +54,14 @@ Client
                   │       │
            ┌──────▼──┐ ┌──▼──────────┐
            │  Redis  │ │LanguageTool │
-           │  Cache  │ │   Engine    │
+           │  Cache  │ │  + NGrams   │
            └─────────┘ └────────────┘
 ```
 
 **Request flow:**
 
 1. Request hits Go API → API key validated → rate limit checked
-2. Cache key computed from `(language + level + text)` SHA-256 hash
+2. Cache key computed from `SHA-256(language + level + categories + text)`
 3. Redis hit → return immediately with `"cached": true`
 4. Redis miss → forward to LanguageTool engine → store result in Redis → return
 
@@ -65,24 +69,21 @@ Client
 
 ## Quick Start
 
-### Prerequisites
-
-`make setup` handles everything automatically. It installs:
-
-- Homebrew (macOS)
-- curl, unzip
-- Docker + Docker Compose
-- Generates `.env` with secure random secrets
-
 ```bash
-git clone <repo-url>
-cd languagetool-backend
+git clone https://github.com/studio-devhub/proofapi
+cd proofapi
 make setup
 ```
 
-That's it. The API will be available at `http://localhost:4003`.
+`make setup` handles everything automatically — installs Docker, generates `.env` with secure random secrets, and starts all services.
 
 > **Note:** LanguageTool takes ~60 seconds to fully start on first launch. Use `make health` to check readiness.
+
+| URL | Description |
+| --- | ----------- |
+| `http://localhost:4003/v1/health` | Health check |
+| `http://localhost:4003/docs/index.html` | Swagger UI |
+| `ws://localhost:4003/v1/ws` | WebSocket endpoint |
 
 ---
 
@@ -97,6 +98,9 @@ That's it. The API will be available at `http://localhost:4003`.
 | `REDIS_PORT` | `6379` | Redis port |
 | `LT_URL` | `http://languagetool:8010` | LanguageTool base URL |
 | `ALLOWED_ORIGINS` | *(empty = all)* | Comma-separated allowed WebSocket origins |
+| `DOMAIN` | `localhost` | Production domain for Nginx |
+| `SSL_CERT` | *(optional)* | Path to TLS certificate file |
+| `SSL_KEY` | *(optional)* | Path to TLS private key file |
 
 ---
 
@@ -104,7 +108,7 @@ That's it. The API will be available at `http://localhost:4003`.
 
 ### Authentication
 
-All endpoints except `/v1/health` require the `X-API-Key` header.
+All endpoints except `/v1/health` and `/docs` require the `X-API-Key` header.
 
 ```http
 X-API-Key: your-api-key
@@ -114,27 +118,42 @@ WebSocket also accepts `?api_key=your-api-key` as a query parameter.
 
 ---
 
-### REST Endpoints
+### `POST /v1/check`
 
-#### `POST /v1/check`
+Check text for grammar, spelling, style, and punctuation errors.
 
-Check text for grammar and spelling errors.
-
-#### Request
+**Request**
 
 ```json
 {
   "text": "I recieve wierd emails definately",
   "language": "en-US",
-  "level": "default"
+  "level": "picky",
+  "enabledCategories": "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY"
 }
 ```
 
 | Field | Type | Required | Description |
 | ----- | ---- | -------- | ----------- |
-| `text` | string | Yes | Text to check (2–20,000 characters) |
-| `language` | string | No | BCP 47 language code. Default: `en-US` |
-| `level` | string | No | `default` or `picky`. Default: `default` |
+| `text` | string | ✅ | Text to check (2–20,000 characters) |
+| `language` | string | | BCP 47 language code. Default: `en-US` |
+| `level` | string | | `default` or `picky`. Default: `default` |
+| `enabledCategories` | string | | Comma-separated category IDs to enable |
+| `disabledCategories` | string | | Comma-separated category IDs to suppress |
+| `enabledRules` | string | | Comma-separated rule IDs to force-enable |
+| `disabledRules` | string | | Comma-separated rule IDs to suppress |
+| `enabledOnly` | bool | | Run only the enabled rules/categories |
+
+**Maximum suggestions payload:**
+
+```json
+{
+  "text": "Your text here...",
+  "language": "en-US",
+  "level": "picky",
+  "enabledCategories": "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY,COMPOUNDING,MISC"
+}
+```
 
 **Response `200 OK`**
 
@@ -146,17 +165,13 @@ Check text for grammar and spelling errors.
       "offset": 2,
       "length": 7,
       "replacements": [
-        { "value": "receive" },
-        { "value": "relieve" }
+        { "value": "receive" }
       ],
       "rule": {
         "id": "MORFOLOGIK_RULE_EN_US",
         "description": "Possible spelling mistake",
         "issueType": "misspelling",
-        "category": {
-          "id": "TYPOS",
-          "name": "Possible Typo"
-        }
+        "category": { "id": "TYPOS", "name": "Possible Typo" }
       },
       "context": {
         "text": "I recieve wierd emails definately",
@@ -165,31 +180,32 @@ Check text for grammar and spelling errors.
       }
     }
   ],
-  "language": {
-    "name": "English (US)",
-    "code": "en-US"
-  },
+  "language": { "name": "English (US)", "code": "en-US" },
   "checkedAt": "2026-05-18T07:06:08Z",
   "cached": false
 }
 ```
 
-**Cached Response** — second identical request returns:
+**Available categories:**
 
-```json
-{
-  "cached": true,
-  "cacheExpiresIn": 298
-}
-```
+| Category | What it catches |
+| -------- | --------------- |
+| `GRAMMAR` | Subject-verb agreement, tense errors |
+| `SPELLING` | Misspelled words |
+| `STYLE` | Wordy phrases, passive voice |
+| `PUNCTUATION` | Missing commas, wrong apostrophe |
+| `TYPOGRAPHY` | Quote marks, dashes, spacing |
+| `CASING` | Capitalization errors |
+| `CONFUSED_WORDS` | their/there, affect/effect |
+| `REDUNDANCY` | "past history", "end result" |
+| `COMPOUNDING` | Hyphenation errors |
+| `MISC` | Everything else |
 
 ---
 
-#### `GET /v1/languages`
+### `GET /v1/languages`
 
-Returns all supported languages.
-
-**Response `200 OK`**
+Returns all supported languages. Results cached for 1 hour.
 
 ```json
 [
@@ -200,11 +216,9 @@ Returns all supported languages.
 
 ---
 
-#### `DELETE /v1/cache`
+### `DELETE /v1/cache`
 
-Clears all cached check results from Redis.
-
-**Response `200 OK`**
+Clears all cached grammar check results from Redis.
 
 ```json
 { "deleted": 42 }
@@ -212,21 +226,16 @@ Clears all cached check results from Redis.
 
 ---
 
-#### `GET /v1/health`
+### `GET /v1/health`
 
-Health check — no authentication required.
-
-**Response `200 OK`**
+No authentication required.
 
 ```json
 {
   "api": "ok",
   "languagetool": "ok",
   "redis": "ok",
-  "websocket": {
-    "active": 3,
-    "total": 47
-  },
+  "websocket": { "active": 3, "total": 47 },
   "cacheStats": {
     "hits": 1024,
     "misses": 83,
@@ -236,30 +245,22 @@ Health check — no authentication required.
 }
 ```
 
-Returns `503 Service Unavailable` if LanguageTool or Redis is unreachable.
+Returns `503` if LanguageTool or Redis is unreachable.
+
+---
+
+### `GET /docs/index.html`
+
+Swagger UI — interactive API explorer. No authentication required.
 
 ---
 
 ### WebSocket API
 
-Connect to `/v1/ws` for real-time checking with debounce. Ideal for editor integrations where text is checked as the user types.
+Connect to `/v1/ws` for real-time checking. The server debounces 150ms — no need to debounce on the client.
 
-```text
-ws://localhost:4003/v1/ws?api_key=your-api-key
 ```
-
-#### Connection
-
-On connect, the server immediately sends an acknowledgement:
-
-```json
-{
-  "type": "ack",
-  "payload": {
-    "connId": "1716019568123456789",
-    "status": "connected"
-  }
-}
+ws://localhost:4003/v1/ws?api_key=your-api-key
 ```
 
 #### Message Types
@@ -269,29 +270,36 @@ On connect, the server immediately sends an acknowledgement:
 | `check` | Client → Server | Submit text for checking |
 | `result` | Server → Client | Grammar/spelling results |
 | `error` | Server → Client | Error response |
-| `ping` | Client → Server | Keepalive ping |
+| `ping` | Client → Server | Keepalive |
 | `pong` | Server → Client | Keepalive response |
 | `ack` | Server → Client | Connection acknowledged |
 
-#### Send a Check Request
+#### Send a Check
 
 ```json
 {
   "type": "check",
   "text": "I recieve wierd emails",
   "language": "en-US",
+  "level": "picky",
+  "enabledCategories": "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY",
   "seqId": 1
 }
 ```
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `type` | string | Must be `"check"` |
+| `type` | string | `"check"` |
 | `text` | string | Text to check (2–20,000 chars) |
 | `language` | string | BCP 47 code. Default: `en-US` |
-| `seqId` | int | Client-assigned sequence number for ordering responses |
+| `level` | string | `default` or `picky`. Default: `picky` |
+| `enabledCategories` | string | Categories to enable. Default: all major categories |
+| `disabledCategories` | string | Categories to suppress |
+| `enabledRules` | string | Rule IDs to force-enable |
+| `disabledRules` | string | Rule IDs to suppress |
+| `seqId` | int | Client sequence number for ordering |
 
-> **Debounce:** The server waits 150ms after the last received message before processing. If another message arrives within that window, the timer resets. This prevents unnecessary checks on rapid keystrokes.
+> **WebSocket default:** if `level` and `enabledCategories` are omitted, the server automatically uses `level=picky` with all major categories enabled for maximum accuracy.
 
 #### Receive a Result
 
@@ -300,25 +308,7 @@ On connect, the server immediately sends an acknowledgement:
   "type": "result",
   "seqId": 1,
   "payload": {
-    "matches": [
-      {
-        "message": "Possible spelling mistake found.",
-        "offset": 2,
-        "length": 7,
-        "replacements": [{ "value": "receive" }],
-        "rule": {
-          "id": "MORFOLOGIK_RULE_EN_US",
-          "description": "Possible spelling mistake",
-          "issueType": "misspelling",
-          "category": { "id": "TYPOS", "name": "Possible Typo" }
-        },
-        "context": {
-          "text": "I recieve wierd emails",
-          "offset": 2,
-          "length": 7
-        }
-      }
-    ],
+    "matches": [...],
     "language": { "name": "English (US)", "code": "en-US" },
     "cached": false,
     "latencyMs": 43
@@ -328,19 +318,11 @@ On connect, the server immediately sends an acknowledgement:
 
 #### Keepalive
 
-Send a ping every 30 seconds to keep the connection alive:
-
 ```json
 { "type": "ping" }
 ```
 
-Server responds:
-
-```json
-{ "type": "pong" }
-```
-
-> The server automatically sends WebSocket-level ping frames every 30 seconds. Connections with no pong response within 60 seconds are closed.
+Server responds with `{ "type": "pong" }`. The server also sends WebSocket-level ping frames every 30 seconds — connections with no pong within 60 seconds are closed.
 
 #### JavaScript Example
 
@@ -353,8 +335,7 @@ ws.onopen = () => console.log('Connected');
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
   if (msg.type === 'result') {
-    console.log('Matches:', msg.payload.matches);
-    console.log('Latency:', msg.payload.latencyMs + 'ms');
+    console.log(`${msg.payload.matches.length} issues found (${msg.payload.latencyMs}ms)`);
     console.log('Cached:', msg.payload.cached);
   }
 };
@@ -364,7 +345,9 @@ function check(text, language = 'en-US') {
     type: 'check',
     text,
     language,
-    seqId: ++seq
+    level: 'picky',
+    enabledCategories: 'GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY',
+    seqId: ++seq,
   }));
 }
 
@@ -378,7 +361,9 @@ check('I recieve wierd emails definately');
 ```bash
 make setup        # First-time setup: install deps, generate secrets, start services
 make up           # Start all services
+make up-prod      # Start with Nginx reverse proxy (HTTP or HTTPS based on .env)
 make down         # Stop all services
+make down-clean   # Stop and remove volumes (WARNING: deletes Redis data)
 make restart      # Restart all services
 make restart-api  # Rebuild and restart only the Go API
 make logs         # Follow all logs
@@ -389,7 +374,8 @@ make status       # Show container status
 make test         # Run unit tests
 make test-docker  # Run tests inside Docker
 make build        # Build Docker image
-make ngrams       # Download English NGrams (~8GB, improves accuracy)
+make swagger      # Regenerate Swagger docs from annotations
+make ngrams       # Download English NGrams (~14GB, improves accuracy)
 make redis-cli    # Open Redis CLI
 make redis-stats  # Show Redis cache hit/miss stats
 make clean        # Remove build artifacts
@@ -399,34 +385,56 @@ make clean        # Remove build artifacts
 
 ## NGrams (Optional)
 
-NGrams significantly improve accuracy for confusable words (e.g. *their* vs *there*, *its* vs *it's*).
+NGrams significantly improve accuracy for context-dependent errors — *their* vs *there*, *its* vs *it's*, *then* vs *than*. They do not affect basic spell checking.
 
 ```bash
-make ngrams
-make restart
+make ngrams    # Downloads ~14GB to ./ngrams/
+make restart   # Restart to load the new model
 ```
 
-> **Warning:** Requires ~8GB disk space and ~1GB additional RAM for LanguageTool.
+> Requires ~4GB additional RAM for LanguageTool. Recommended instance: `t3.large` or larger.
+
+---
+
+## Swagger UI
+
+Interactive API documentation is available at:
+
+```
+http://localhost:4003/docs/index.html
+```
+
+To regenerate docs after changing handler annotations:
+
+```bash
+make swagger
+```
 
 ---
 
 ## Production Deployment
 
+### Recommended: AWS `t3.large`
+
+| Service | RAM usage |
+| ------- | --------- |
+| LanguageTool + NGrams | ~3.5–4 GB |
+| Redis | ~150 MB |
+| Go API | ~50 MB |
+| OS buffer | ~500 MB |
+
+`t3.large` (8GB RAM) gives comfortable headroom. Use Spot for ~$18–22/mo.
+
 ### 1. Get an SSL certificate
 
-Obtain a certificate from any provider — Cloudflare, AWS ACM, ZeroSSL, or your own CA. You need two files:
-
-- **Certificate** (`.crt` or `fullchain.pem`)
-- **Private key** (`.key` or `privkey.pem`)
-
-Copy them anywhere on your server, e.g.:
+Copy your certificate files to the server:
 
 ```bash
 /etc/ssl/proofapi/fullchain.pem
 /etc/ssl/proofapi/privkey.pem
 ```
 
-### 2. Set domain and cert paths in `.env`
+### 2. Configure `.env`
 
 ```env
 DOMAIN=api.yourdomain.com
@@ -441,56 +449,31 @@ ALLOWED_ORIGINS=https://yourapp.com
 make up-prod
 ```
 
-`make up-prod` validates all three values exist before starting. Nginx reads `nginx.conf.template` at startup and injects `DOMAIN`, `SSL_CERT`, and `SSL_KEY` automatically — no manual nginx.conf editing needed.
-
-Starts the full stack with Nginx on ports 80 + 443:
-
-- HTTP → HTTPS redirect (port 80)
-- TLS 1.2/1.3 with your certificate
+Nginx starts on ports 80 + 443 with:
+- HTTP → HTTPS redirect
+- TLS 1.2/1.3
 - WebSocket proxying (`wss://`) on `/v1/ws`
-- Rate limiting (60 requests/minute per IP)
-- Security headers (`X-Frame-Options`, `HSTS`, `X-Content-Type-Options`)
+- Security headers (HSTS, X-Frame-Options, X-Content-Type-Options)
 
-### Configure WebSocket CORS
-
-Set `ALLOWED_ORIGINS` in `.env` to restrict WebSocket connections:
-
-```env
-ALLOWED_ORIGINS=https://yourapp.com,https://app.yourapp.com
-```
-
-Leave empty to allow all origins (development only).
-
-### Docker Compose Services
-
-| Service | Container | Port | Description |
-| ------- | --------- | ---- | ----------- |
-| `languagetool` | `lt-engine` | 8010 (internal) | LanguageTool grammar engine |
-| `redis` | `lt-redis` | 6379 (internal) | Cache layer |
-| `api` | `lt-api` | 4003 | Go REST + WebSocket API |
-| `nginx` | `lt-nginx` | 80 | Reverse proxy (production profile only) |
+> If `SSL_CERT`/`SSL_KEY` are not set, Nginx falls back to HTTP automatically.
 
 ---
 
 ## Testing
 
 ```bash
-make test
-```
-
-Runs the full test suite including:
-
-- Unit tests for all packages
-- Middleware tests (API key auth, rate limiting)
-- Handler tests with miniredis (in-memory Redis mock)
-- WebSocket connection and debounce tests
-- LanguageTool client edge cases
-- Latency benchmarks
-
-```bash
+make test          # Unit tests for all packages
 make test-docker   # Run tests in isolated Docker environment
 make cover         # Open HTML coverage report in browser
 ```
+
+Test coverage includes:
+- Middleware (API key auth, rate limiting, JSON error responses)
+- Handler tests with miniredis
+- WebSocket connection, debounce, ping/pong, CORS
+- LanguageTool client edge cases and latency benchmarks
+- Cache stats parsing
+- Nginx entrypoint SSL/HTTP mode selection (8 shell tests)
 
 ---
 
@@ -499,10 +482,25 @@ make cover         # Open HTML coverage report in browser
 | Code | Description |
 | ---- | ----------- |
 | `200` | Success |
-| `400` | Bad request (invalid body, text too short/long) |
+| `400` | Invalid body, text too short/long |
 | `401` | Missing or invalid API key |
 | `429` | Rate limit exceeded |
 | `503` | LanguageTool or Redis unavailable |
+
+---
+
+## Frontend Integration
+
+See [FRONTEND_INTEGRATION.md](FRONTEND_INTEGRATION.md) for a complete React (Vite) integration guide covering REST, WebSocket, TipTap rich text editor, and inline error highlighting.
+
+A runnable example is in [`examples/react/`](examples/react/):
+
+```bash
+cd examples/react
+cp .env.example .env   # add your API key
+yarn install
+yarn dev               # http://localhost:5173
+```
 
 ---
 
