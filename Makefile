@@ -1,4 +1,4 @@
-.PHONY: up down restart logs test build clean setup help ngrams ssl
+.PHONY: up down restart logs test build clean setup help ngrams ssl swagger
 
 include .env
 export
@@ -171,6 +171,7 @@ up:
 	@echo ""
 	@echo "  API:          http://localhost:$(PORT)"
 	@echo "  Health check: http://localhost:$(PORT)/v1/health"
+	@echo "  Swagger UI:   http://localhost:$(PORT)/docs/index.html"
 	@echo ""
 	@echo "  Waiting for LanguageTool to be ready (can take ~60s)..."
 	@sleep 5
@@ -320,6 +321,17 @@ curl-test:
 		-H "X-API-Key: $(API_KEY)" \
 		-d '{"text":"I recieve wierd emails definately","language":"en-US"}'
 	@echo ""
+
+## swagger: Regenerate Swagger docs (requires swag: go install github.com/swaggo/swag/cmd/swag@latest)
+swagger:
+	@echo "$(GREEN)Regenerating Swagger docs...$(NC)"
+	@$(shell go env GOPATH)/bin/swag init \
+		--generalInfo cmd/api/main.go \
+		--output docs \
+		--parseDependency \
+		--parseInternal
+	@echo "$(GREEN)✅ Docs generated → docs/swagger.json$(NC)"
+	@echo "   UI available at: http://localhost:$(PORT)/docs/index.html"
 
 ## clean: Remove build artifacts
 clean:

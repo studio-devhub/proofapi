@@ -27,6 +27,21 @@ func NewHandler(client *Client, redis *cache.Redis, logger *slog.Logger) *Handle
 	return &Handler{client: client, redis: redis, logger: logger}
 }
 
+// Check performs grammar and spell checking on the provided text.
+//
+//	@Summary		Check text for grammar and spelling errors
+//	@Description	Submits text to LanguageTool for analysis. Results are cached in Redis for 5 minutes.
+//	@Tags			grammar
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		CheckRequest	true	"Text to check"
+//	@Success		200		{object}	CheckResponse
+//	@Failure		400		{object}	docs.ErrorResponse	"Invalid input or text too short/long"
+//	@Failure		401		{object}	docs.ErrorResponse	"Missing or invalid API key"
+//	@Failure		429		{object}	docs.ErrorResponse	"Rate limit exceeded"
+//	@Failure		503		{object}	docs.ErrorResponse	"LanguageTool unavailable"
+//	@Security		ApiKeyAuth
+//	@Router			/check [post]
 func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	var req CheckRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -79,6 +94,17 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// Languages returns all supported languages.
+//
+//	@Summary		List supported languages
+//	@Description	Returns all languages supported by the LanguageTool engine. Results are cached for 1 hour.
+//	@Tags			grammar
+//	@Produce		json
+//	@Success		200	{array}		docs.LanguageItem
+//	@Failure		401	{object}	docs.ErrorResponse
+//	@Failure		503	{object}	docs.ErrorResponse
+//	@Security		ApiKeyAuth
+//	@Router			/languages [get]
 func (h *Handler) Languages(w http.ResponseWriter, r *http.Request) {
 	cacheKey := "lt:languages"
 
@@ -104,6 +130,17 @@ func (h *Handler) Languages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, langs)
 }
 
+// ClearCache flushes all grammar-check entries from Redis.
+//
+//	@Summary		Clear grammar check cache
+//	@Description	Deletes all cached grammar check results from Redis. Does not affect the languages cache.
+//	@Tags			cache
+//	@Produce		json
+//	@Success		200	{object}	docs.ClearCacheResponse
+//	@Failure		401	{object}	docs.ErrorResponse
+//	@Failure		500	{object}	docs.ErrorResponse
+//	@Security		ApiKeyAuth
+//	@Router			/cache [delete]
 func (h *Handler) ClearCache(w http.ResponseWriter, r *http.Request) {
 	deleted, err := h.redis.DeletePattern(r.Context(), cachePrefix+":*")
 	if err != nil {
