@@ -1,0 +1,107 @@
+services:
+
+  # ── LanguageTool ────────────────────────────────────────
+  languagetool:
+    image: erikvl87/languagetool
+    container_name: lt-engine
+    restart: unless-stopped
+    environment:
+      - Java_Xmx=1g
+      - Java_Xms=256m
+      - langtool_languageModel=/ngrams
+    volumes:
+      - ./ngrams:/ngrams
+    networks:
+      - lt-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8010/v2/languages || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Redis ────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: lt-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-redis_secret}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --loglevel warning
+    volumes:
+      - redis-data:/data
+    networks:
+      - lt-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Go API ───────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lt-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-4003}:4003"
+    environment:
+      - PORT=${PORT:-4003}
+      - LT_URL=http://languagetool:8010
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_secret}
+      - API_KEY=${API_KEY:-dev-secret-key}
+    depends_on:
+      languagetool:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - lt-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4003/v1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Nginx (optional reverse proxy) ──────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: lt-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+      - SSL_CERT=${SSL_CERT:-}
+      - SSL_KEY=${SSL_KEY:-}
+    volumes:
+      - ./nginx/nginx-ssl.conf.template:/etc/nginx/templates/nginx-ssl.conf.template:ro
+      - ./nginx/nginx-http.conf.template:/etc/nginx/templates/nginx-http.conf.template:ro
+      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
+      - ${SSL_CERT:-/dev/null}:${SSL_CERT:-/dev/null}:ro
+      - ${SSL_KEY:-/dev/null}:${SSL_KEY:-/dev/null}:ro
+    entrypoint: ["sh", "/entrypoint.sh"]
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - lt-net
+    profiles:
+      - production   # only starts with: docker compose --profile production up
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  lt-net:
+    driver: bridge

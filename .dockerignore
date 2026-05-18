@@ -1,0 +1,27 @@
+# Build artifacts
+api
+coverage.out
+*.out
+
+# Git
+.git
+.gitignore
+
+# Docs
+*.md
+LICENSE
+
+# Test files (not needed in prod image)
+**/*_test.go
+
+# Large data files
+ngrams/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/

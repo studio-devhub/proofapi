@@ -1,0 +1,29 @@
+services:
+
+  # ── Redis (for tests) ────────────────────────────────────
+  redis-test:
+    image: redis:7-alpine
+    container_name: lt-redis-test
+    ports:
+      - "6380:6379"
+    networks:
+      - lt-test-net
+
+  # ── Test Runner ──────────────────────────────────────────
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: lt-test
+    environment:
+      - REDIS_HOST=redis-test
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+    depends_on:
+      - redis-test
+    networks:
+      - lt-test-net
+
+networks:
+  lt-test-net:
+    driver: bridge
