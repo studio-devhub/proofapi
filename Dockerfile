@@ -27,11 +27,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     ./cmd/api
 
 # ── Stage 2: Final Image ──────────────────────────────────
-FROM scratch
+FROM alpine:3.19
 
-# SSL certs & timezone
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+RUN apk add --no-cache ca-certificates tzdata wget
 
 # Binary only
 COPY --from=builder /app/api /api
