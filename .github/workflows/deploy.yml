@@ -26,11 +26,19 @@ jobs:
             echo "Pulling latest code..."
             git pull origin main
 
-            echo "Rebuilding and restarting API..."
-            docker compose up -d --build --remove-orphans --force-recreate
+            echo "Removing any orphan containers..."
+            docker rm -f lt-engine lt-redis lt-api lt-nginx 2>/dev/null || true
 
-            echo "Waiting for health check..."
-            sleep 10
-            curl -sf http://localhost:4003/v1/health | grep -q '"api":"ok"'
+            echo "Rebuilding and restarting all services..."
+            docker compose up -d --build --remove-orphans
 
-            echo "Deploy successful."
+            echo "Waiting for API to be healthy (up to 120s)..."
+            for i in $(seq 1 24); do
+              curl -sf http://localhost:4003/v1/health | grep -q '"api":"ok"' && echo "Deploy successful." && exit 0
+              echo "  waiting... ($i/24)"
+              sleep 5
+            done
+
+            echo "Health check failed after 120s"
+            docker compose logs --tail 20
+            exit 1
