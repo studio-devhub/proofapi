@@ -1,0 +1,36 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: SSH Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+
+            cd /home/${{ secrets.EC2_USER }}/proofapi
+
+            echo "Pulling latest code..."
+            git pull origin main
+
+            echo "Rebuilding and restarting API..."
+            docker compose up -d --build --remove-orphans
+
+            echo "Waiting for health check..."
+            sleep 10
+            curl -sf http://localhost:4003/v1/health | grep -q '"api":"ok"'
+
+            echo "Deploy successful."
