@@ -198,13 +198,17 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 	if level == "" {
 		level = "picky"
 	}
+	motherTongue := msg.MotherTongue
+	if motherTongue == "" {
+		motherTongue = "en-US"
+	}
 	enabledCategories := msg.EnabledCategories
 	if enabledCategories == "" {
 		enabledCategories = "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY,COMPOUNDING,MISC"
 	}
 
 	// Cache hit
-	cacheKey := cache.BuildKey(cachePrefix, lang, level, enabledCategories, msg.MotherTongue, msg.Text)
+	cacheKey := cache.BuildKey(cachePrefix, lang, level, enabledCategories, motherTongue, msg.Text)
 	var cached languagetool.CheckResponse
 	hit, err := c.redis.Get(c.ctx, cacheKey, &cached)
 	if err != nil {
@@ -229,7 +233,7 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 		Text:               msg.Text,
 		Language:           lang,
 		Level:              level,
-		MotherTongue:       msg.MotherTongue,
+		MotherTongue:       motherTongue,
 		EnabledCategories:  enabledCategories,
 		DisabledCategories: msg.DisabledCategories,
 		EnabledRules:       msg.EnabledRules,
