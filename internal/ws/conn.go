@@ -204,7 +204,7 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 	}
 
 	// Cache hit
-	cacheKey := cache.BuildKey(cachePrefix, lang, level, enabledCategories, msg.Text)
+	cacheKey := cache.BuildKey(cachePrefix, lang, level, enabledCategories, msg.MotherTongue, msg.Text)
 	var cached languagetool.CheckResponse
 	hit, err := c.redis.Get(c.ctx, cacheKey, &cached)
 	if err != nil {
@@ -229,6 +229,7 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 		Text:               msg.Text,
 		Language:           lang,
 		Level:              level,
+		MotherTongue:       msg.MotherTongue,
 		EnabledCategories:  enabledCategories,
 		DisabledCategories: msg.DisabledCategories,
 		EnabledRules:       msg.EnabledRules,

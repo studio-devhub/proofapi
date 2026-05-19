@@ -40,6 +40,9 @@ func (c *Client) Check(ctx context.Context, req CheckRequest) (*CheckResponse, e
 		"language": {req.Language},
 		"level":    {req.Level},
 	}
+	if req.MotherTongue != "" {
+		body.Set("motherTongue", req.MotherTongue)
+	}
 	if req.EnabledRules != "" {
 		body.Set("enabledRules", req.EnabledRules)
 	}

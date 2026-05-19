@@ -6,8 +6,8 @@ services:
     container_name: lt-engine
     restart: unless-stopped
     environment:
-      - Java_Xmx=1g
-      - Java_Xms=256m
+      - Java_Xmx=2g
+      - Java_Xms=512m
       - langtool_languageModel=/ngrams
     volumes:
       - ./ngrams:/ngrams

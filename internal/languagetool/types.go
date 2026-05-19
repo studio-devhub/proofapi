@@ -5,6 +5,8 @@ type CheckRequest struct {
 	Language string `json:"language"`
 	// "default" | "picky" — picky enables extra style/punctuation rules
 	Level string `json:"level"`
+	// BCP 47 code of the user's native language — enables false-friends detection (e.g. "de-DE" for a German speaker writing English)
+	MotherTongue string `json:"motherTongue,omitempty"`
 	// Comma-separated rule IDs to enable on top of the active profile
 	EnabledRules string `json:"enabledRules,omitempty"`
 	// Comma-separated rule IDs to suppress

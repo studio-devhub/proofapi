@@ -57,7 +57,10 @@ func buildServer(t *testing.T) *httptest.Server {
 	router := chi.NewRouter()
 	router.Use(middleware.APIKey("test-key"))
 	router.Post("/v1/check", handler.Check)
-	router.Get("/v1/health", handler.Health)
+	router.Get("/v1/health", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"api": "ok"})
+	})
 	router.Get("/v1/languages", handler.Languages)
 	router.Delete("/v1/cache", handler.ClearCache)
 

@@ -65,7 +65,7 @@ func main() {
 
 	ltClient := languagetool.NewClient(languagetool.Config{
 		BaseURL: getEnv("LT_URL", "http://languagetool:8010"),
-		Timeout: 10 * time.Second,
+		Timeout: 30 * time.Second,
 	})
 
 	restHandler := languagetool.NewHandler(ltClient, redis, logger)
@@ -81,7 +81,7 @@ func main() {
 	// REST routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.APIKey(apiKey))
-		r.Use(chimiddleware.Timeout(15 * time.Second))
+		r.Use(chimiddleware.Timeout(35 * time.Second))
 		r.Post("/v1/check", restHandler.Check)
 		r.Get("/v1/languages", restHandler.Languages)
 		r.Delete("/v1/cache", restHandler.ClearCache)

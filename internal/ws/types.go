@@ -9,6 +9,7 @@ type IncomingMessage struct {
 	Text               string `json:"text"`
 	Language           string `json:"language,omitempty"`
 	Level              string `json:"level,omitempty"`
+	MotherTongue       string `json:"motherTongue,omitempty"`
 	EnabledCategories  string `json:"enabledCategories,omitempty"`
 	DisabledCategories string `json:"disabledCategories,omitempty"`
 	EnabledRules       string `json:"enabledRules,omitempty"`

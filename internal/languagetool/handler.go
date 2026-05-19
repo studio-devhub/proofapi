@@ -58,10 +58,13 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		req.Language = "en-US"
 	}
 	if req.Level == "" {
-		req.Level = "default"
+		req.Level = "picky"
+	}
+	if req.EnabledCategories == "" && req.EnabledOnly == false {
+		req.EnabledCategories = "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY,COMPOUNDING,MISC"
 	}
 
-	cacheKey := cache.BuildKey(cachePrefix, req.Language, req.Level, req.EnabledCategories, req.Text)
+	cacheKey := cache.BuildKey(cachePrefix, req.Language, req.Level, req.EnabledCategories, req.MotherTongue, req.Text)
 
 	var cached CheckResponse
 	hit, err := h.redis.Get(r.Context(), cacheKey, &cached)

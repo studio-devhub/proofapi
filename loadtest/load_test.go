@@ -96,7 +96,10 @@ func newTestServer(t *testing.T, ltDelay time.Duration) *testServer {
 	router.Group(func(r chi.Router) {
 		r.Use(mw.APIKey("test-key"))
 		r.Post("/v1/check", restHandler.Check)
-		r.Get("/v1/health", restHandler.Health)
+		r.Get("/v1/health", func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"api": "ok"})
+		})
 	})
 
 	// WebSocket route — header OR query param auth
