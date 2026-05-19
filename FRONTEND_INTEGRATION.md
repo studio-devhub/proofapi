@@ -18,12 +18,16 @@ yarn dev               # http://localhost:5173
 ### Environment Variables
 
 ```env
+# Local development
 VITE_PROOF_API_URL=http://localhost:4003
 VITE_PROOF_API_KEY=your-api-key
 VITE_PROOF_WS_URL=ws://localhost:4003/v1/ws
-```
 
-> **Production:** use `https://` and `wss://` with your deployed domain.
+# Production
+VITE_PROOF_API_URL=https://proofapi.tulvo.io
+VITE_PROOF_API_KEY=your-api-key
+VITE_PROOF_WS_URL=wss://proofapi.tulvo.io/v1/ws
+```
 
 ---
 
@@ -35,8 +39,9 @@ VITE_PROOF_WS_URL=ws://localhost:4003/v1/ws
 export interface CheckRequest {
   text: string;
   language?: string;           // default: "en-US"
-  level?: string;              // "default" | "picky"
-  enabledCategories?: string;  // e.g. "GRAMMAR,SPELLING,STYLE"
+  level?: string;              // "default" | "picky" — default: "picky"
+  motherTongue?: string;       // native language for false-friends detection e.g. "de-DE"
+  enabledCategories?: string;  // default: all 10 categories
   disabledCategories?: string;
   enabledRules?: string;
   disabledRules?: string;
