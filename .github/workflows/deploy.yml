@@ -29,6 +29,10 @@ jobs:
             echo "Removing any orphan containers..."
             docker rm -f lt-engine lt-redis lt-api lt-nginx 2>/dev/null || true
 
+            echo "Clearing Docker build cache and dangling images..."
+            docker builder prune -af
+            docker image prune -f
+
             echo "Rebuilding and restarting all services..."
             docker compose --profile production up -d --build --remove-orphans
 
