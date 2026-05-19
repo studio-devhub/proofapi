@@ -30,7 +30,7 @@ jobs:
             docker rm -f lt-engine lt-redis lt-api lt-nginx 2>/dev/null || true
 
             echo "Rebuilding and restarting all services..."
-            docker compose up -d --build --remove-orphans
+            docker compose --profile production up -d --build --remove-orphans
 
             echo "Waiting for API to be healthy (up to 120s)..."
             for i in $(seq 1 24); do
