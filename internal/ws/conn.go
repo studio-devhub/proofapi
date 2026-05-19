@@ -199,9 +199,6 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 		level = "picky"
 	}
 	motherTongue := msg.MotherTongue
-	if motherTongue == "" {
-		motherTongue = "en-US"
-	}
 	enabledCategories := msg.EnabledCategories
 	if enabledCategories == "" {
 		enabledCategories = "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY,COMPOUNDING,MISC"

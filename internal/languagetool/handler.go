@@ -63,9 +63,6 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	if req.EnabledCategories == "" && req.EnabledOnly == false {
 		req.EnabledCategories = "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY,COMPOUNDING,MISC"
 	}
-	if req.MotherTongue == "" {
-		req.MotherTongue = "en-US"
-	}
 
 	cacheKey := cache.BuildKey(cachePrefix, req.Language, req.Level, req.EnabledCategories, req.MotherTongue, req.Text)
 

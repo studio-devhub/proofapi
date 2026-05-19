@@ -8,7 +8,8 @@ services:
     environment:
       - Java_Xmx=2g
       - Java_Xms=512m
-      - langtool_languageModel=/ngrams
+      # Uncomment after running: make ngrams
+      # - langtool_languageModel=/ngrams
     volumes:
       - ./ngrams:/ngrams
     networks:
