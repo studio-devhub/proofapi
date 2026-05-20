@@ -72,30 +72,39 @@ func (s *DynamoStore) RemoveWord(ctx context.Context, clientID, word string) err
 }
 
 func (s *DynamoStore) ListWords(ctx context.Context, clientID string) ([]Word, error) {
-	out, err := s.client.Query(ctx, &dynamodb.QueryInput{
+	input := &dynamodb.QueryInput{
 		TableName:              aws.String(s.tableName),
 		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :prefix)"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":pk":     &types.AttributeValueMemberS{Value: pk(clientID)},
 			":prefix": &types.AttributeValueMemberS{Value: "WORD#"},
 		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("query: %w", err)
 	}
 
-	words := make([]Word, 0, len(out.Items))
-	for _, item := range out.Items {
-		var di dynamoItem
-		if err := attributevalue.UnmarshalMap(item, &di); err != nil {
-			continue
+	var words []Word
+	var startKey map[string]types.AttributeValue
+	for {
+		input.ExclusiveStartKey = startKey
+		out, err := s.client.Query(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("query: %w", err)
 		}
-		t, _ := time.Parse(time.RFC3339, di.AddedAt)
-		words = append(words, Word{
-			Word:     di.Word,
-			Language: di.Language,
-			AddedAt:  t,
-		})
+		for _, item := range out.Items {
+			var di dynamoItem
+			if err := attributevalue.UnmarshalMap(item, &di); err != nil {
+				continue
+			}
+			t, _ := time.Parse(time.RFC3339, di.AddedAt)
+			words = append(words, Word{
+				Word:     di.Word,
+				Language: di.Language,
+				AddedAt:  t,
+			})
+		}
+		if out.LastEvaluatedKey == nil {
+			break
+		}
+		startKey = out.LastEvaluatedKey
 	}
 	return words, nil
 }
@@ -105,10 +114,13 @@ func (s *DynamoStore) ClearAll(ctx context.Context, clientID string) error {
 	if err != nil {
 		return err
 	}
+	// Delete all words, accumulating errors — don't stop on first failure
+	// so we clean up as many entries as possible.
+	var firstErr error
 	for _, w := range words {
-		if err := s.RemoveWord(ctx, clientID, w.Word); err != nil {
-			return err
+		if err := s.RemoveWord(ctx, clientID, w.Word); err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
-	return nil
+	return firstErr
 }

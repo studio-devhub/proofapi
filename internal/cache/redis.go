@@ -116,6 +116,18 @@ func (r *Redis) Del(ctx context.Context, keys ...string) error {
 	return r.client.Del(ctx, keys...).Err()
 }
 
+// SetMembers atomically replaces all members of a Redis Set using a pipeline.
+// Always includes a sentinel member so the key exists even for empty sets.
+func (r *Redis) SetMembers(ctx context.Context, key string, members []any, ttl time.Duration) error {
+	_, err := r.client.TxPipelined(ctx, func(p redis.Pipeliner) error {
+		p.Del(ctx, key)
+		p.SAdd(ctx, key, members...)
+		p.Expire(ctx, key, ttl)
+		return nil
+	})
+	return err
+}
+
 type Stats struct {
 	Hits       int64  `json:"hits"`
 	Misses     int64  `json:"misses"`

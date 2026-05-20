@@ -3,6 +3,7 @@ package integration_test
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -52,17 +53,22 @@ func buildServer(t *testing.T) *httptest.Server {
 	client := languagetool.NewClient(languagetool.Config{
 		BaseURL: ltSrv.URL, Timeout: 5 * time.Second,
 	})
-	handler := languagetool.NewHandler(client, r, nil)
+	handler := languagetool.NewHandler(client, r, nil, slog.Default())
 
 	router := chi.NewRouter()
-	router.Use(middleware.APIKey("test-key"))
-	router.Post("/v1/check", handler.Check)
+
+	// Health: no auth (mirrors production)
 	router.Get("/v1/health", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"api": "ok"})
 	})
-	router.Get("/v1/languages", handler.Languages)
-	router.Delete("/v1/cache", handler.ClearCache)
+
+	router.Group(func(r chi.Router) {
+		r.Use(middleware.APIKey("test-key"))
+		r.Post("/v1/check", handler.Check)
+		r.Get("/v1/languages", handler.Languages)
+		r.Delete("/v1/cache", handler.ClearCache)
+	})
 
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)

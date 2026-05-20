@@ -1,7 +1,8 @@
 package ws
 
 import (
-	"fmt"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"os"
@@ -63,7 +64,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := fmt.Sprintf("%d", time.Now().UnixNano())
+	id := newConnID()
 
 	conn := NewConn(id, raw, h.lt, h.redis, h.dictSvc, h.logger)
 
@@ -76,4 +77,13 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 // Stats returns hub stats for health endpoint
 func (h *Handler) Stats() map[string]int64 {
 	return h.hub.Stats()
+}
+
+func newConnID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// Extremely unlikely — fall back to timestamp-based ID
+		return hex.EncodeToString([]byte(time.Now().String()))
+	}
+	return hex.EncodeToString(b)
 }

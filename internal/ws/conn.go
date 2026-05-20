@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,8 @@ import (
 	"languagetool-backend/internal/dictionary"
 	"languagetool-backend/internal/languagetool"
 )
+
+var clientIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]{1,128}$`)
 
 
 const (
@@ -72,13 +75,13 @@ func (c *Conn) Run() {
 	go func() { defer wg.Done(); c.writePump() }()
 	go func() { defer wg.Done(); c.readPump() }()
 
-	c.send <- OutgoingMessage{
+	c.safeSend(OutgoingMessage{
 		Type: TypeAck,
 		Payload: map[string]string{
 			"connId": c.id,
 			"status": "connected",
 		},
-	}
+	})
 
 	wg.Wait()
 	c.cleanup()
@@ -116,7 +119,7 @@ func (c *Conn) readPump() {
 
 		switch msg.Type {
 		case TypePing:
-			c.send <- OutgoingMessage{Type: TypePong}
+			c.safeSend(OutgoingMessage{Type: TypePong})
 
 		case TypeCheck:
 			msg.Text = strings.TrimSpace(msg.Text)
@@ -126,6 +129,10 @@ func (c *Conn) readPump() {
 			}
 			if len(msg.Text) > 20000 {
 				c.sendError("text too long (max 20000 chars)", msg.SeqID)
+				continue
+			}
+			if msg.ClientID != "" && !clientIDPattern.MatchString(msg.ClientID) {
+				c.sendError("invalid clientId format", msg.SeqID)
 				continue
 			}
 			c.scheduleCheck(&msg)
@@ -219,7 +226,7 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 	wordSet := c.getWordSet(msg.ClientID)
 
 	if hit {
-		c.send <- OutgoingMessage{
+		c.safeSend(OutgoingMessage{
 			Type:  TypeResult,
 			SeqID: msg.SeqID,
 			Payload: CheckPayload{
@@ -228,7 +235,7 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 				Cached:    true,
 				LatencyMs: time.Since(start).Milliseconds(),
 			},
-		}
+		})
 		return
 	}
 
@@ -256,7 +263,7 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 		c.redis.Set(ctx, cacheKey, result, cacheTTL)
 	}()
 
-	c.send <- OutgoingMessage{
+	c.safeSend(OutgoingMessage{
 		Type:  TypeResult,
 		SeqID: msg.SeqID,
 		Payload: CheckPayload{
@@ -265,7 +272,7 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 			Cached:    false,
 			LatencyMs: time.Since(start).Milliseconds(),
 		},
-	}
+	})
 }
 
 // ── Helpers ───────────────────────────────────────────────
@@ -277,11 +284,18 @@ func (c *Conn) getWordSet(clientID string) map[string]struct{} {
 	return c.dictSvc.GetWordSet(c.ctx, clientID)
 }
 
-func (c *Conn) sendError(msg string, seqID int) {
+// safeSend sends a message without panicking if the channel is closed.
+// Uses recover so that a debounce goroutine firing after cleanup() cannot crash the process.
+func (c *Conn) safeSend(msg OutgoingMessage) {
+	defer func() { recover() }() //nolint:errcheck
 	select {
-	case c.send <- OutgoingMessage{Type: TypeError, Error: msg, SeqID: seqID}:
-	default:
+	case c.send <- msg:
+	case <-c.ctx.Done():
 	}
+}
+
+func (c *Conn) sendError(msg string, seqID int) {
+	c.safeSend(OutgoingMessage{Type: TypeError, Error: msg, SeqID: seqID})
 }
 
 func (c *Conn) cleanup() {

@@ -2,6 +2,7 @@ package dictionary
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -106,8 +107,6 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func isValidationErr(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "cannot be empty") ||
-		strings.Contains(msg, "too long") ||
-		strings.Contains(msg, "no spaces")
+	var ve *ValidationError
+	return errors.As(err, &ve)
 }

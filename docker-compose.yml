@@ -29,7 +29,7 @@ services:
       redis-server
       --requirepass ${REDIS_PASSWORD:-redis_secret}
       --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
+      --maxmemory-policy volatile-lru
       --appendonly yes
       --loglevel warning
     volumes:

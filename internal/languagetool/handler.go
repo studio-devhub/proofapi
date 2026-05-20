@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"languagetool-backend/internal/cache"
 	"languagetool-backend/internal/dictionary"
 )
+
+var clientIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]{1,128}$`)
 
 
 
@@ -78,6 +81,10 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	clientID := r.Header.Get("X-Client-ID")
 	if clientID == "" {
 		clientID = req.ClientID
+	}
+	if clientID != "" && !clientIDPattern.MatchString(clientID) {
+		writeError(w, http.StatusBadRequest, "invalid clientId: must be 1-128 alphanumeric chars (a-z, A-Z, 0-9, -, _, .)")
+		return
 	}
 
 	if hit {

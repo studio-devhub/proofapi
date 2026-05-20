@@ -86,9 +86,9 @@ func newTestServer(t *testing.T, ltDelay time.Duration) *testServer {
 		BaseURL: lt.URL, Timeout: 10 * time.Second,
 	})
 
-	restHandler := languagetool.NewHandler(ltClient, r, slog.Default())
+	restHandler := languagetool.NewHandler(ltClient, r, nil, slog.Default())
 	hub := wspkg.NewHub(slog.Default())
-	wsHandler := wspkg.NewHandler(hub, ltClient, r, slog.Default())
+	wsHandler := wspkg.NewHandler(hub, ltClient, r, nil, slog.Default())
 
 	router := chi.NewRouter()
 

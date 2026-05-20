@@ -71,7 +71,7 @@ func setup(t *testing.T) *testSuite {
 	})
 
 	hub := wspkg.NewHub(slog.Default())
-	handler := wspkg.NewHandler(hub, ltClient, r, slog.Default())
+	handler := wspkg.NewHandler(hub, ltClient, r, nil, slog.Default())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/ws", handler.ServeWS)

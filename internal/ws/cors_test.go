@@ -39,7 +39,7 @@ func setupCORSServer(t *testing.T, allowedOrigins string) *httptest.Server {
 	lt := newLTClient(t, ltSrv.URL)
 
 	hub := wspkg.NewHub(slog.Default())
-	handler := wspkg.NewHandler(hub, lt, r, slog.Default())
+	handler := wspkg.NewHandler(hub, lt, r, nil, slog.Default())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/ws", handler.ServeWS)

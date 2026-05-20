@@ -125,10 +125,13 @@ func main() {
 
 	port := getEnv("PORT", "4003")
 	srv := &http.Server{
-		Addr:         ":" + port,
-		Handler:      r,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:        ":" + port,
+		Handler:     r,
+		ReadTimeout: 10 * time.Second,
+		// WriteTimeout must be 0 for WebSocket connections: the server-level timeout
+		// fires on long-lived WS connections (our ping interval is 30 s) and closes them.
+		// Per-message write deadlines are set inside writePump instead.
+		WriteTimeout: 0,
 		IdleTimeout:  120 * time.Second,
 	}
 

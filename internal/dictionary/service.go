@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 )
 
 // Service orchestrates persistent storage (DynamoDB) and cache (Redis).
@@ -24,15 +25,16 @@ func NewService(store Store, cache *DictCache, logger *slog.Logger) *Service {
 func (s *Service) AddWord(ctx context.Context, clientID, word, language string) (Word, error) {
 	word = strings.TrimSpace(word)
 	if word == "" {
-		return Word{}, fmt.Errorf("word cannot be empty")
+		return Word{}, &ValidationError{Msg: "word cannot be empty"}
 	}
 	if len([]rune(word)) > 100 {
-		return Word{}, fmt.Errorf("word too long (max 100 characters)")
+		return Word{}, &ValidationError{Msg: "word too long (max 100 characters)"}
 	}
 	if strings.ContainsAny(word, " \t\n\r") {
-		return Word{}, fmt.Errorf("word must be a single token (no spaces)")
+		return Word{}, &ValidationError{Msg: "word must be a single token (no spaces)"}
 	}
 
+	now := time.Now().UTC()
 	if err := s.store.AddWord(ctx, clientID, word, language); err != nil {
 		return Word{}, fmt.Errorf("store add: %w", err)
 	}
@@ -41,7 +43,7 @@ func (s *Service) AddWord(ctx context.Context, clientID, word, language string) 
 		s.logger.Warn("dict cache add failed", "clientId", clientID, "word", word, "err", err)
 	}
 
-	return Word{Word: word, Language: language}, nil
+	return Word{Word: word, Language: language, AddedAt: now}, nil
 }
 
 func (s *Service) RemoveWord(ctx context.Context, clientID, word string) error {
@@ -100,7 +102,9 @@ func (s *Service) GetWordSet(ctx context.Context, clientID string) map[string]st
 
 	// Populate cache in background — don't block the check request
 	go func() {
-		if cerr := s.cache.SetWords(context.Background(), clientID, words); cerr != nil {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if cerr := s.cache.SetWords(bgCtx, clientID, words); cerr != nil {
 			s.logger.Warn("dict cache set failed", "clientId", clientID, "err", cerr)
 		}
 	}()

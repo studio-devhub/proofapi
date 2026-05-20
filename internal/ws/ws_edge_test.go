@@ -57,7 +57,7 @@ func setupEdge(t *testing.T, delay time.Duration) *testSuite {
 		BaseURL: ltSrv.URL, Timeout: 5 * time.Second,
 	})
 	hub := wspkg.NewHub(slog.Default())
-	handler := wspkg.NewHandler(hub, ltClient, r, slog.Default())
+	handler := wspkg.NewHandler(hub, ltClient, r, nil, slog.Default())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/ws", handler.ServeWS)
