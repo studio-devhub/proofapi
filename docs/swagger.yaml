@@ -21,6 +21,55 @@ definitions:
         example: 42
         type: integer
     type: object
+  docs.DictionaryAddRequest:
+    properties:
+      language:
+        example: en-US
+        type: string
+      word:
+        example: Tulvo
+        type: string
+    type: object
+  docs.DictionaryClearResponse:
+    properties:
+      cleared:
+        example: true
+        type: boolean
+      clientId:
+        example: dev-client-1
+        type: string
+    type: object
+  docs.DictionaryListResponse:
+    properties:
+      clientId:
+        example: dev-client-1
+        type: string
+      count:
+        example: 2
+        type: integer
+      words:
+        items:
+          $ref: '#/definitions/docs.DictionaryWord'
+        type: array
+    type: object
+  docs.DictionaryRemoveResponse:
+    properties:
+      removed:
+        example: Tulvo
+        type: string
+    type: object
+  docs.DictionaryWord:
+    properties:
+      addedAt:
+        example: "2026-05-20T10:00:00Z"
+        type: string
+      language:
+        example: en-US
+        type: string
+      word:
+        example: Tulvo
+        type: string
+    type: object
   docs.ErrorResponse:
     properties:
       error:
@@ -73,6 +122,10 @@ definitions:
     type: object
   internal_languagetool.CheckRequest:
     properties:
+      clientId:
+        description: Optional user identifier — used to filter matches against the
+          user's custom dictionary
+        type: string
       disabledCategories:
         description: Comma-separated category IDs to suppress
         type: string
@@ -94,6 +147,10 @@ definitions:
       level:
         description: '"default" | "picky" — picky enables extra style/punctuation
           rules'
+        type: string
+      motherTongue:
+        description: BCP 47 code of the user's native language — enables false-friends
+          detection (e.g. "de-DE" for a German speaker writing English)
         type: string
       text:
         type: string
@@ -242,6 +299,144 @@ paths:
       summary: Check text for grammar and spelling errors
       tags:
       - grammar
+  /dictionary:
+    delete:
+      description: Deletes all words from the client's personal dictionary.
+      parameters:
+      - description: Client identifier
+        in: header
+        name: X-Client-ID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.DictionaryClearResponse'
+        "401":
+          description: Missing or invalid API key
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Storage error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Clear dictionary
+      tags:
+      - dictionary
+  /dictionary/words:
+    get:
+      description: Returns all words the client has added to their personal dictionary.
+      parameters:
+      - description: Client identifier
+        in: header
+        name: X-Client-ID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.DictionaryListResponse'
+        "401":
+          description: Missing or invalid API key
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Storage error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List dictionary words
+      tags:
+      - dictionary
+    post:
+      consumes:
+      - application/json
+      description: Adds a word to the client's personal dictionary. Future grammar
+        checks will ignore this word.
+      parameters:
+      - description: Client identifier
+        in: header
+        name: X-Client-ID
+        required: true
+        type: string
+      - description: Word to add
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/docs.DictionaryAddRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/docs.DictionaryWord'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Missing or invalid API key
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Storage error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Add word to dictionary
+      tags:
+      - dictionary
+  /dictionary/words/{word}:
+    delete:
+      description: Removes a word from the client's personal dictionary. Idempotent
+        — no error if word does not exist.
+      parameters:
+      - description: Client identifier
+        in: header
+        name: X-Client-ID
+        required: true
+        type: string
+      - description: Word to remove
+        in: path
+        name: word
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/docs.DictionaryRemoveResponse'
+        "400":
+          description: Missing word
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "401":
+          description: Missing or invalid API key
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+        "500":
+          description: Storage error
+          schema:
+            $ref: '#/definitions/docs.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Remove word from dictionary
+      tags:
+      - dictionary
   /health:
     get:
       description: 'Returns the status of all services: API, LanguageTool, Redis,

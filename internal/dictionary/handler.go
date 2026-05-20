@@ -22,6 +22,21 @@ func NewHTTPHandler(svc *Service, logger *slog.Logger) *HTTPHandler {
 	return &HTTPHandler{svc: svc, logger: logger}
 }
 
+// AddWord adds a word to the client's custom dictionary.
+//
+//	@Summary		Add word to dictionary
+//	@Description	Adds a word to the client's personal dictionary. Future grammar checks will ignore this word.
+//	@Tags			dictionary
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-Client-ID	header		string						true	"Client identifier"
+//	@Param			request		body		docs.DictionaryAddRequest	true	"Word to add"
+//	@Success		201			{object}	docs.DictionaryWord
+//	@Failure		400			{object}	docs.ErrorResponse	"Invalid input"
+//	@Failure		401			{object}	docs.ErrorResponse	"Missing or invalid API key"
+//	@Failure		500			{object}	docs.ErrorResponse	"Storage error"
+//	@Security		ApiKeyAuth
+//	@Router			/dictionary/words [post]
 func (h *HTTPHandler) AddWord(w http.ResponseWriter, r *http.Request) {
 	clientID := r.Header.Get("X-Client-ID")
 
@@ -45,6 +60,20 @@ func (h *HTTPHandler) AddWord(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, word)
 }
 
+// RemoveWord removes a word from the client's custom dictionary.
+//
+//	@Summary		Remove word from dictionary
+//	@Description	Removes a word from the client's personal dictionary. Idempotent — no error if word does not exist.
+//	@Tags			dictionary
+//	@Produce		json
+//	@Param			X-Client-ID	header		string	true	"Client identifier"
+//	@Param			word		path		string	true	"Word to remove"
+//	@Success		200			{object}	docs.DictionaryRemoveResponse
+//	@Failure		400			{object}	docs.ErrorResponse	"Missing word"
+//	@Failure		401			{object}	docs.ErrorResponse	"Missing or invalid API key"
+//	@Failure		500			{object}	docs.ErrorResponse	"Storage error"
+//	@Security		ApiKeyAuth
+//	@Router			/dictionary/words/{word} [delete]
 func (h *HTTPHandler) RemoveWord(w http.ResponseWriter, r *http.Request) {
 	clientID := r.Header.Get("X-Client-ID")
 	word := chi.URLParam(r, "word")
@@ -63,6 +92,18 @@ func (h *HTTPHandler) RemoveWord(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"removed": word})
 }
 
+// ListWords returns all words in the client's custom dictionary.
+//
+//	@Summary		List dictionary words
+//	@Description	Returns all words the client has added to their personal dictionary.
+//	@Tags			dictionary
+//	@Produce		json
+//	@Param			X-Client-ID	header		string	true	"Client identifier"
+//	@Success		200			{object}	docs.DictionaryListResponse
+//	@Failure		401			{object}	docs.ErrorResponse	"Missing or invalid API key"
+//	@Failure		500			{object}	docs.ErrorResponse	"Storage error"
+//	@Security		ApiKeyAuth
+//	@Router			/dictionary/words [get]
 func (h *HTTPHandler) ListWords(w http.ResponseWriter, r *http.Request) {
 	clientID := r.Header.Get("X-Client-ID")
 
@@ -84,6 +125,18 @@ func (h *HTTPHandler) ListWords(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ClearAll removes all words from the client's custom dictionary.
+//
+//	@Summary		Clear dictionary
+//	@Description	Deletes all words from the client's personal dictionary.
+//	@Tags			dictionary
+//	@Produce		json
+//	@Param			X-Client-ID	header		string	true	"Client identifier"
+//	@Success		200			{object}	docs.DictionaryClearResponse
+//	@Failure		401			{object}	docs.ErrorResponse	"Missing or invalid API key"
+//	@Failure		500			{object}	docs.ErrorResponse	"Storage error"
+//	@Security		ApiKeyAuth
+//	@Router			/dictionary [delete]
 func (h *HTTPHandler) ClearAll(w http.ResponseWriter, r *http.Request) {
 	clientID := r.Header.Get("X-Client-ID")
 

@@ -40,3 +40,34 @@ type HealthResponse struct {
 	WebSocket    WebSocketStats `json:"websocket"`
 	CacheStats   CacheStats     `json:"cacheStats"`
 }
+
+// DictionaryWord represents a single word in the user's custom dictionary.
+type DictionaryWord struct {
+	Word     string `json:"word"               example:"Tulvo"`
+	Language string `json:"language,omitempty" example:"en-US"`
+	AddedAt  string `json:"addedAt"            example:"2026-05-20T10:00:00Z"`
+}
+
+// DictionaryListResponse is returned by GET /v1/dictionary/words.
+type DictionaryListResponse struct {
+	ClientID string           `json:"clientId" example:"dev-client-1"`
+	Words    []DictionaryWord `json:"words"`
+	Count    int              `json:"count"    example:"2"`
+}
+
+// DictionaryAddRequest is the body for POST /v1/dictionary/words.
+type DictionaryAddRequest struct {
+	Word     string `json:"word"               example:"Tulvo"`
+	Language string `json:"language,omitempty" example:"en-US"`
+}
+
+// DictionaryRemoveResponse is returned by DELETE /v1/dictionary/words/{word}.
+type DictionaryRemoveResponse struct {
+	Removed string `json:"removed" example:"Tulvo"`
+}
+
+// DictionaryClearResponse is returned by DELETE /v1/dictionary.
+type DictionaryClearResponse struct {
+	Cleared  bool   `json:"cleared"   example:"true"`
+	ClientID string `json:"clientId"  example:"dev-client-1"`
+}

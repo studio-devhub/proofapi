@@ -121,6 +121,219 @@
                 }
             }
         },
+        "/dictionary": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Deletes all words from the client's personal dictionary.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dictionary"
+                ],
+                "summary": "Clear dictionary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Client identifier",
+                        "name": "X-Client-ID",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.DictionaryClearResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Storage error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/dictionary/words": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns all words the client has added to their personal dictionary.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dictionary"
+                ],
+                "summary": "List dictionary words",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Client identifier",
+                        "name": "X-Client-ID",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.DictionaryListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Storage error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Adds a word to the client's personal dictionary. Future grammar checks will ignore this word.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dictionary"
+                ],
+                "summary": "Add word to dictionary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Client identifier",
+                        "name": "X-Client-ID",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Word to add",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/docs.DictionaryAddRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/docs.DictionaryWord"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Storage error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/dictionary/words/{word}": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Removes a word from the client's personal dictionary. Idempotent — no error if word does not exist.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dictionary"
+                ],
+                "summary": "Remove word from dictionary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Client identifier",
+                        "name": "X-Client-ID",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Word to remove",
+                        "name": "word",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/docs.DictionaryRemoveResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing word",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Storage error",
+                        "schema": {
+                            "$ref": "#/definitions/docs.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "Returns the status of all services: API, LanguageTool, Redis, and WebSocket hub.",
@@ -219,6 +432,77 @@
                 }
             }
         },
+        "docs.DictionaryAddRequest": {
+            "type": "object",
+            "properties": {
+                "language": {
+                    "type": "string",
+                    "example": "en-US"
+                },
+                "word": {
+                    "type": "string",
+                    "example": "Tulvo"
+                }
+            }
+        },
+        "docs.DictionaryClearResponse": {
+            "type": "object",
+            "properties": {
+                "cleared": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "clientId": {
+                    "type": "string",
+                    "example": "dev-client-1"
+                }
+            }
+        },
+        "docs.DictionaryListResponse": {
+            "type": "object",
+            "properties": {
+                "clientId": {
+                    "type": "string",
+                    "example": "dev-client-1"
+                },
+                "count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "words": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/docs.DictionaryWord"
+                    }
+                }
+            }
+        },
+        "docs.DictionaryRemoveResponse": {
+            "type": "object",
+            "properties": {
+                "removed": {
+                    "type": "string",
+                    "example": "Tulvo"
+                }
+            }
+        },
+        "docs.DictionaryWord": {
+            "type": "object",
+            "properties": {
+                "addedAt": {
+                    "type": "string",
+                    "example": "2026-05-20T10:00:00Z"
+                },
+                "language": {
+                    "type": "string",
+                    "example": "en-US"
+                },
+                "word": {
+                    "type": "string",
+                    "example": "Tulvo"
+                }
+            }
+        },
         "docs.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -295,6 +579,10 @@
         "internal_languagetool.CheckRequest": {
             "type": "object",
             "properties": {
+                "clientId": {
+                    "description": "Optional user identifier — used to filter matches against the user's custom dictionary",
+                    "type": "string"
+                },
                 "disabledCategories": {
                     "description": "Comma-separated category IDs to suppress",
                     "type": "string"
@@ -320,6 +608,10 @@
                 },
                 "level": {
                     "description": "\"default\" | \"picky\" — picky enables extra style/punctuation rules",
+                    "type": "string"
+                },
+                "motherTongue": {
+                    "description": "BCP 47 code of the user's native language — enables false-friends detection (e.g. \"de-DE\" for a German speaker writing English)",
                     "type": "string"
                 },
                 "text": {
