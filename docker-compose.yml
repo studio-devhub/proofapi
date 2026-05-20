@@ -61,6 +61,9 @@ services:
       - AWS_REGION=${AWS_REGION:-us-west-2}
       - DYNAMODB_TABLE=${DYNAMODB_TABLE:-proofapi-dictionary}
       - DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT:-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN:-}
     depends_on:
       languagetool:
         condition: service_healthy
