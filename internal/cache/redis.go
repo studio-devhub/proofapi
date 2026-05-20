@@ -128,6 +128,56 @@ func (r *Redis) SetMembers(ctx context.Context, key string, members []any, ttl t
 	return err
 }
 
+// IncrAndDel atomically increments a version counter and deletes a data key.
+// Used to invalidate the dict cache while bumping its version in one round-trip.
+func (r *Redis) IncrAndDel(ctx context.Context, verKey, dataKey string) error {
+	_, err := r.client.TxPipelined(ctx, func(p redis.Pipeliner) error {
+		p.Incr(ctx, verKey)
+		p.Del(ctx, dataKey)
+		return nil
+	})
+	return err
+}
+
+// GetInt64 returns the int64 value of a Redis key, or 0 if the key does not exist.
+func (r *Redis) GetInt64(ctx context.Context, key string) (int64, error) {
+	val, err := r.client.Get(ctx, key).Int64()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	return val, err
+}
+
+// SetMembersIfVersion atomically writes the Set only when the version key still
+// equals expectedVer — preventing stale background cache writes.
+// Uses WATCH + MULTI/EXEC (optimistic locking): if verKey is modified between
+// the version check and the write, the transaction is silently skipped.
+func (r *Redis) SetMembersIfVersion(ctx context.Context, dataKey, verKey string, members []any, expectedVer int64, ttl time.Duration) error {
+	err := r.client.Watch(ctx, func(tx *redis.Tx) error {
+		currentVer, err := tx.Get(ctx, verKey).Int64()
+		if err == redis.Nil {
+			currentVer = 0
+		} else if err != nil {
+			return err
+		}
+		if currentVer != expectedVer {
+			return nil // version changed while we queried DynamoDB — skip
+		}
+		_, err = tx.TxPipelined(ctx, func(p redis.Pipeliner) error {
+			p.Del(ctx, dataKey)
+			p.SAdd(ctx, dataKey, members...)
+			p.Expire(ctx, dataKey, ttl)
+			return nil
+		})
+		return err
+	}, verKey) // WATCH verKey — abort if it changes before EXEC
+
+	if err == redis.TxFailedErr {
+		return nil // concurrent write detected — skip gracefully
+	}
+	return err
+}
+
 type Stats struct {
 	Hits       int64  `json:"hits"`
 	Misses     int64  `json:"misses"`

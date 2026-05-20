@@ -25,56 +25,55 @@ func NewDictCache(r *appredis.Redis) *DictCache {
 	return &DictCache{r: r}
 }
 
-func dictKey(clientID string) string {
-	return fmt.Sprintf("dict:%s", clientID)
-}
+func dictKey(clientID string) string    { return fmt.Sprintf("dict:%s", clientID) }
+func dictVerKey(clientID string) string { return fmt.Sprintf("dict:ver:%s", clientID) }
 
-// GetWords returns lowercased words for a user from Redis.
-// Returns nil, false if not cached.
-// Uses SMembers directly (no TOCTOU from a separate EXISTS check).
-func (c *DictCache) GetWords(ctx context.Context, clientID string) ([]string, bool, error) {
+// GetWords returns lowercased words and the current version from Redis.
+// Returns nil, 0, false if not cached.
+func (c *DictCache) GetWords(ctx context.Context, clientID string) ([]string, int64, bool, error) {
 	members, err := c.r.SMembers(ctx, dictKey(clientID))
 	if err != nil {
-		return nil, false, err
+		return nil, 0, false, err
 	}
 	if len(members) == 0 {
-		// Key doesn't exist — cache miss
-		return nil, false, nil
+		return nil, 0, false, nil // cache miss
 	}
-	// Filter out the sentinel; return real words (may be empty slice = valid empty dict)
+	ver, err := c.r.GetInt64(ctx, dictVerKey(clientID))
+	if err != nil {
+		return nil, 0, false, err
+	}
 	words := make([]string, 0, len(members))
 	for _, m := range members {
 		if m != dictSentinel {
 			words = append(words, m)
 		}
 	}
-	return words, true, nil
+	return words, ver, true, nil
 }
 
-// SetWords atomically replaces the entire Redis Set for a user (called on DynamoDB load).
-// Always stores the sentinel so empty dictionaries are cached and don't cause a DynamoDB stampede.
-func (c *DictCache) SetWords(ctx context.Context, clientID string, words []Word) error {
+// SetWordsIfVersion writes to Redis only if the version counter hasn't changed
+// since the caller read it — prevents stale background cache writes.
+func (c *DictCache) SetWordsIfVersion(ctx context.Context, clientID string, words []Word, expectedVer int64) error {
 	members := make([]any, 0, len(words)+1)
-	members = append(members, dictSentinel) // always present so empty dict is cached
+	members = append(members, dictSentinel)
 	for _, w := range words {
 		members = append(members, strings.ToLower(w.Word))
 	}
-	return c.r.SetMembers(ctx, dictKey(clientID), members, dictTTL)
+	return c.r.SetMembersIfVersion(ctx, dictKey(clientID), dictVerKey(clientID), members, expectedVer, dictTTL)
 }
 
-// AddWord invalidates the cache entry so the next read reloads from DynamoDB.
-// Using SAdd after an eviction would create a one-word set that's missing prior words.
-// Invalidation is safer: one extra DynamoDB read per word-add, but always consistent.
-func (c *DictCache) AddWord(ctx context.Context, clientID, _ string) error {
-	return c.r.Del(ctx, dictKey(clientID))
+// GetVersion returns the current version counter for a client (0 if not set).
+func (c *DictCache) GetVersion(ctx context.Context, clientID string) (int64, error) {
+	return c.r.GetInt64(ctx, dictVerKey(clientID))
 }
 
-// RemoveWord removes a lowercased word from the Redis Set.
-func (c *DictCache) RemoveWord(ctx context.Context, clientID, word string) error {
-	return c.r.SRem(ctx, dictKey(clientID), strings.ToLower(word))
+// BumpAndInvalidate increments the version counter and deletes the cache key atomically.
+// Called on every write (add/remove/clear) so background loaders can detect concurrent writes.
+func (c *DictCache) BumpAndInvalidate(ctx context.Context, clientID string) error {
+	return c.r.IncrAndDel(ctx, dictVerKey(clientID), dictKey(clientID))
 }
 
-// Invalidate removes the entire user cache entry.
+// Invalidate removes the cache entry without bumping the version (used by ClearAll).
 func (c *DictCache) Invalidate(ctx context.Context, clientID string) error {
 	return c.r.Del(ctx, dictKey(clientID))
 }

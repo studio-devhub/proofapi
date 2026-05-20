@@ -39,8 +39,8 @@ func (s *Service) AddWord(ctx context.Context, clientID, word, language string) 
 		return Word{}, fmt.Errorf("store add: %w", err)
 	}
 
-	if err := s.cache.AddWord(ctx, clientID, word); err != nil {
-		s.logger.Warn("dict cache add failed", "clientId", clientID, "word", word, "err", err)
+	if err := s.cache.BumpAndInvalidate(ctx, clientID); err != nil {
+		s.logger.Warn("dict cache invalidate failed", "clientId", clientID, "word", word, "err", err)
 	}
 
 	return Word{Word: word, Language: language, AddedAt: now}, nil
@@ -51,8 +51,8 @@ func (s *Service) RemoveWord(ctx context.Context, clientID, word string) error {
 		return fmt.Errorf("store remove: %w", err)
 	}
 
-	if err := s.cache.RemoveWord(ctx, clientID, word); err != nil {
-		s.logger.Warn("dict cache remove failed", "clientId", clientID, "word", word, "err", err)
+	if err := s.cache.BumpAndInvalidate(ctx, clientID); err != nil {
+		s.logger.Warn("dict cache invalidate failed", "clientId", clientID, "word", word, "err", err)
 	}
 
 	return nil
@@ -84,7 +84,7 @@ func (s *Service) GetWordSet(ctx context.Context, clientID string) map[string]st
 		return nil
 	}
 
-	cached, hit, err := s.cache.GetWords(ctx, clientID)
+	cached, ver, hit, err := s.cache.GetWords(ctx, clientID)
 	if err != nil {
 		s.logger.Warn("dict cache get failed, falling back to db", "clientId", clientID, "err", err)
 	}
@@ -93,21 +93,27 @@ func (s *Service) GetWordSet(ctx context.Context, clientID string) map[string]st
 		return toSet(cached)
 	}
 
-	// DynamoDB fallback
+	// DynamoDB fallback — snapshot the version before querying so the background
+	// writer can detect if a concurrent AddWord/RemoveWord raced ahead of us.
+	if ver == 0 {
+		ver, _ = s.cache.GetVersion(ctx, clientID)
+	}
+
 	words, err := s.store.ListWords(ctx, clientID)
 	if err != nil {
 		s.logger.Warn("dict store list failed, proceeding unfiltered", "clientId", clientID, "err", err)
 		return nil
 	}
 
-	// Populate cache in background — don't block the check request
-	go func() {
+	// Populate cache in background — don't block the check request.
+	// SetWordsIfVersion is a no-op if the version changed while we queried DynamoDB.
+	go func(snapshotVer int64) {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		if cerr := s.cache.SetWords(bgCtx, clientID, words); cerr != nil {
+		if cerr := s.cache.SetWordsIfVersion(bgCtx, clientID, words, snapshotVer); cerr != nil {
 			s.logger.Warn("dict cache set failed", "clientId", clientID, "err", cerr)
 		}
-	}()
+	}(ver)
 
 	wordStrings := make([]string, len(words))
 	for i, w := range words {
