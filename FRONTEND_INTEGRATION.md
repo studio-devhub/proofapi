@@ -46,6 +46,7 @@ export interface CheckRequest {
   enabledRules?: string;
   disabledRules?: string;
   enabledOnly?: boolean;
+  clientId?: string;           // optional: filter matches against this client's dictionary
 }
 
 export interface Match {
@@ -75,6 +76,20 @@ export interface SpellCheckResult {
   cached: boolean;
   latencyMs: number;
 }
+
+// ── Dictionary ────────────────────────────────────────────
+
+export interface DictionaryWord {
+  word: string;
+  language?: string;
+  addedAt: string; // ISO 8601
+}
+
+export interface DictionaryListResponse {
+  clientId: string;
+  words: DictionaryWord[];
+  count: number;
+}
 ```
 
 ---
@@ -87,17 +102,20 @@ Best for: submit-on-click, form validation, document checking.
 
 ```typescript
 // src/lib/proofApi.ts
-import type { CheckRequest, CheckResponse } from '@/types/proof';
+import type { CheckRequest, CheckResponse, DictionaryWord, DictionaryListResponse } from '@/types/proof';
 
 const BASE_URL = import.meta.env.VITE_PROOF_API_URL;
 const API_KEY  = import.meta.env.VITE_PROOF_API_KEY;
 
-export async function checkText(req: CheckRequest): Promise<CheckResponse> {
+// ── Grammar Check ─────────────────────────────────────────
+
+export async function checkText(req: CheckRequest, clientId?: string): Promise<CheckResponse> {
   const res = await fetch(`${BASE_URL}/v1/check`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-API-Key': API_KEY,
+      ...(clientId ? { 'X-Client-ID': clientId } : {}),
     },
     body: JSON.stringify(req),
   });
@@ -115,6 +133,58 @@ export async function getLanguages(): Promise<{ code: string; longCode: string; 
     headers: { 'X-API-Key': API_KEY },
   });
   return res.json();
+}
+
+// ── Dictionary ────────────────────────────────────────────
+
+function dictHeaders(clientId: string) {
+  return {
+    'Content-Type': 'application/json',
+    'X-API-Key': API_KEY,
+    'X-Client-ID': clientId,
+  };
+}
+
+/** Add a word to the client's dictionary. */
+export async function addDictionaryWord(
+  clientId: string,
+  word: string,
+  language = 'en-US',
+): Promise<DictionaryWord> {
+  const res = await fetch(`${BASE_URL}/v1/dictionary/words`, {
+    method: 'POST',
+    headers: dictHeaders(clientId),
+    body: JSON.stringify({ word, language }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error ?? 'Failed to add word');
+  }
+  return res.json();
+}
+
+/** Remove a word from the client's dictionary. */
+export async function removeDictionaryWord(clientId: string, word: string): Promise<void> {
+  await fetch(`${BASE_URL}/v1/dictionary/words/${encodeURIComponent(word)}`, {
+    method: 'DELETE',
+    headers: dictHeaders(clientId),
+  });
+}
+
+/** List all words in the client's dictionary. */
+export async function listDictionaryWords(clientId: string): Promise<DictionaryListResponse> {
+  const res = await fetch(`${BASE_URL}/v1/dictionary/words`, {
+    headers: dictHeaders(clientId),
+  });
+  return res.json();
+}
+
+/** Clear all words from the client's dictionary. */
+export async function clearDictionary(clientId: string): Promise<void> {
+  await fetch(`${BASE_URL}/v1/dictionary`, {
+    method: 'DELETE',
+    headers: dictHeaders(clientId),
+  });
 }
 ```
 
@@ -137,7 +207,7 @@ import { useState, useCallback } from 'react';
 import { checkText } from '@/lib/proofApi';
 import type { Match } from '@/types/proof';
 
-export function useProofCheck() {
+export function useProofCheck(clientId?: string) {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
@@ -148,12 +218,11 @@ export function useProofCheck() {
     setLoading(true);
     setError(null);
     try {
-      const result = await checkText({
-        text,
-        language,
-        level: 'picky',
-        enabledCategories: 'GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY',
-      });
+      const result = await checkText(
+        { text, language, level: 'picky',
+          enabledCategories: 'GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY' },
+        clientId,
+      );
       setMatches(result.matches);
       setCached(result.cached);
     } catch (err) {
@@ -161,7 +230,7 @@ export function useProofCheck() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clientId]);
 
   const reset = useCallback(() => {
     setMatches([]);
@@ -211,6 +280,233 @@ export function GrammarChecker() {
   );
 }
 ```
+
+---
+
+## Custom Dictionary
+
+Users can add words (brand names, domain terms, proper nouns) to their personal dictionary. Future spell checks with that `clientId` will silently skip matches for those words.
+
+> **How it works:** The LT result cache is shared across all users. Dictionary filtering is applied **after** cache lookup — per request, per clientId. Adding a word never invalidates the shared cache.
+
+### clientId
+
+`clientId` is any stable identifier for the user in your system (user ID, UUID, email hash, etc.). It must be 1–128 alphanumeric characters (`a-z A-Z 0-9 - _ .`).
+
+```typescript
+const clientId = currentUser.id; // e.g. "usr_abc123" or a UUID
+```
+
+### Dictionary Hook
+
+```typescript
+// src/hooks/useDictionary.ts
+import { useState, useEffect, useCallback } from 'react';
+import {
+  listDictionaryWords,
+  addDictionaryWord,
+  removeDictionaryWord,
+  clearDictionary,
+} from '@/lib/proofApi';
+import type { DictionaryWord } from '@/types/proof';
+
+export function useDictionary(clientId: string) {
+  const [words, setWords]     = useState<DictionaryWord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!clientId) return;
+    try {
+      const res = await listDictionaryWords(clientId);
+      setWords(res.words);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load dictionary');
+    }
+  }, [clientId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addWord = useCallback(async (word: string, language = 'en-US') => {
+    setLoading(true);
+    setError(null);
+    try {
+      await addDictionaryWord(clientId, word, language);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add word');
+    } finally {
+      setLoading(false);
+    }
+  }, [clientId, load]);
+
+  const removeWord = useCallback(async (word: string) => {
+    setLoading(true);
+    try {
+      await removeDictionaryWord(clientId, word);
+      setWords(prev => prev.filter(w => w.word !== word));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove word');
+    } finally {
+      setLoading(false);
+    }
+  }, [clientId]);
+
+  const clear = useCallback(async () => {
+    setLoading(true);
+    try {
+      await clearDictionary(clientId);
+      setWords([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [clientId]);
+
+  return { words, loading, error, addWord, removeWord, clear, reload: load };
+}
+```
+
+### "Add to Dictionary" Button (on match suggestion)
+
+```tsx
+// src/components/MatchCard.tsx
+import { addDictionaryWord } from '@/lib/proofApi';
+import type { Match } from '@/types/proof';
+
+interface Props {
+  match: Match;
+  text: string;
+  clientId: string;
+  onAddedToDictionary: (word: string) => void;
+}
+
+export function MatchCard({ match, text, clientId, onAddedToDictionary }: Props) {
+  const flaggedWord = text.slice(match.offset, match.offset + match.length);
+  const isSpelling  = match.rule.issueType === 'misspelling';
+
+  const handleAddToDictionary = async () => {
+    await addDictionaryWord(clientId, flaggedWord);
+    onAddedToDictionary(flaggedWord);
+  };
+
+  return (
+    <div style={{ borderLeft: '3px solid red', padding: '8px 12px', marginTop: 8 }}>
+      <strong>"{flaggedWord}"</strong> — {match.message}
+
+      <div style={{ marginTop: 4, display: 'flex', gap: 8 }}>
+        {match.replacements.slice(0, 4).map(r => (
+          <button key={r.value} style={{ fontWeight: 'bold' }}>{r.value}</button>
+        ))}
+
+        {/* Only offer "Add to Dictionary" for spelling errors */}
+        {isSpelling && clientId && (
+          <button onClick={handleAddToDictionary} style={{ color: '#6b7280' }}>
+            + Add to Dictionary
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+### Dictionary Management Panel
+
+```tsx
+// src/components/DictionaryPanel.tsx
+import { useDictionary } from '@/hooks/useDictionary';
+
+export function DictionaryPanel({ clientId }: { clientId: string }) {
+  const { words, loading, addWord, removeWord, clear } = useDictionary(clientId);
+
+  return (
+    <div>
+      <h3>My Dictionary ({words.length} words)</h3>
+
+      {words.map(w => (
+        <div key={w.word} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+          <span>{w.word}</span>
+          <button onClick={() => removeWord(w.word)}>Remove</button>
+        </div>
+      ))}
+
+      {words.length > 0 && (
+        <button onClick={clear} style={{ color: 'red', marginTop: 8 }}>
+          Clear all
+        </button>
+      )}
+
+      {loading && <p>Saving...</p>}
+    </div>
+  );
+}
+```
+
+### Full example — checker with dictionary
+
+```tsx
+// src/components/GrammarCheckerWithDictionary.tsx
+import { useState } from 'react';
+import { useProofCheck } from '@/hooks/useProofCheck';
+import { MatchCard } from './MatchCard';
+
+const CLIENT_ID = 'usr_abc123'; // replace with actual user ID
+
+export function GrammarCheckerWithDictionary() {
+  const [text, setText] = useState('');
+  const { matches, loading, check, reset } = useProofCheck(CLIENT_ID);
+
+  const handleAddedToDictionary = () => {
+    // Re-run check so the newly added word is no longer flagged
+    check(text);
+  };
+
+  return (
+    <div>
+      <textarea
+        value={text}
+        onChange={e => { setText(e.target.value); reset(); }}
+        rows={6}
+        style={{ width: '100%' }}
+      />
+      <button onClick={() => check(text)} disabled={loading || text.length < 2}>
+        {loading ? 'Checking...' : 'Check Grammar'}
+      </button>
+
+      {matches.map((match, i) => (
+        <MatchCard
+          key={i}
+          match={match}
+          text={text}
+          clientId={CLIENT_ID}
+          onAddedToDictionary={handleAddedToDictionary}
+        />
+      ))}
+    </div>
+  );
+}
+```
+
+### Dictionary API Reference
+
+| Method | Endpoint | Header required |
+| ------ | -------- | --------------- |
+| `POST` | `/v1/dictionary/words` | `X-Client-ID` |
+| `GET` | `/v1/dictionary/words` | `X-Client-ID` |
+| `DELETE` | `/v1/dictionary/words/{word}` | `X-Client-ID` |
+| `DELETE` | `/v1/dictionary` | `X-Client-ID` |
+
+**Request body** for `POST /v1/dictionary/words`:
+
+```json
+{ "word": "Tulvo", "language": "en-US" }
+```
+
+**Validation rules:**
+
+- Word must be 1–100 characters
+- No spaces allowed (single token only)
+- `clientId` must be 1–128 alphanumeric chars (`a-z A-Z 0-9 - _ .`)
 
 ---
 
@@ -265,13 +561,14 @@ export function useSpellCheck() {
     return () => { clearTimeout(reconnectRef.current); wsRef.current?.close(); };
   }, [connect]);
 
-  const check = useCallback((text: string, language = 'en-US') => {
+  const check = useCallback((text: string, language = 'en-US', clientId?: string) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
       type: 'check',
       text,
       language,
       // omit level/enabledCategories to use server defaults (picky + all categories)
+      ...(clientId ? { clientId } : {}),
       seqId: ++seqRef.current,
     }));
   }, []);
@@ -447,6 +744,10 @@ Full list: `GET /v1/languages`
 | Maximum suggestions | `level=picky` + `enabledCategories=GRAMMAR,SPELLING,STYLE,...` |
 | Rich text editor | TipTap example in `examples/react/` |
 | Highlight errors inline | `getSegments()` + `HighlightedText` |
+| Per-user dictionary filtering | Pass `clientId` to `useProofCheck` or WS `check()` |
+| Add word to dictionary | `addDictionaryWord(clientId, word)` or `useDictionary.addWord()` |
+| Show "Add to Dictionary" button | `MatchCard` with `isSpelling` guard |
+| List / manage dictionary words | `useDictionary(clientId)` hook |
 | List available languages | `GET /v1/languages` |
 | Monitor API health | `GET /v1/health` |
 | Explore API interactively | Swagger UI at `/docs/index.html` |
