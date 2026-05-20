@@ -80,6 +80,7 @@ func main() {
 	wsHandler := ws.NewHandler(hub, ltClient, redis, dictSvc, logger)
 
 	r := chi.NewRouter()
+	r.Use(middleware.CORS)
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Recoverer)

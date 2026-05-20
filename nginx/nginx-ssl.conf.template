@@ -52,7 +52,7 @@ http {
       # CORS — allow browser clients from any origin
       add_header 'Access-Control-Allow-Origin' '*' always;
       add_header 'Access-Control-Allow-Methods' 'GET, POST, DELETE, OPTIONS' always;
-      add_header 'Access-Control-Allow-Headers' 'Content-Type, X-API-Key, X-Client-ID, Authorization' always;
+      add_header 'Access-Control-Allow-Headers' 'Content-Type, X-API-Key, X-Client-ID, X-User-ID, Authorization' always;
 
       # Preflight
       if ($request_method = 'OPTIONS') {
