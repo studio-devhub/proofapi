@@ -114,13 +114,47 @@ func (s *DynamoStore) ClearAll(ctx context.Context, clientID string) error {
 	if err != nil {
 		return err
 	}
-	// Delete all words, accumulating errors — don't stop on first failure
-	// so we clean up as many entries as possible.
-	var firstErr error
-	for _, w := range words {
-		if err := s.RemoveWord(ctx, clientID, w.Word); err != nil && firstErr == nil {
-			firstErr = err
+	if len(words) == 0 {
+		return nil
+	}
+
+	// BatchWriteItem supports up to 25 requests per call.
+	const batchSize = 25
+	for i := 0; i < len(words); i += batchSize {
+		end := i + batchSize
+		if end > len(words) {
+			end = len(words)
+		}
+		batch := words[i:end]
+
+		reqs := make([]types.WriteRequest, len(batch))
+		for j, w := range batch {
+			reqs[j] = types.WriteRequest{
+				DeleteRequest: &types.DeleteRequest{
+					Key: map[string]types.AttributeValue{
+						"PK": &types.AttributeValueMemberS{Value: pk(clientID)},
+						"SK": &types.AttributeValueMemberS{Value: sk(w.Word)},
+					},
+				},
+			}
+		}
+
+		out, err := s.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+			RequestItems: map[string][]types.WriteRequest{s.tableName: reqs},
+		})
+		if err != nil {
+			return fmt.Errorf("batch delete: %w", err)
+		}
+
+		// Retry any unprocessed items (DynamoDB may return them under throttling).
+		for len(out.UnprocessedItems) > 0 {
+			out, err = s.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+				RequestItems: out.UnprocessedItems,
+			})
+			if err != nil {
+				return fmt.Errorf("batch delete retry: %w", err)
+			}
 		}
 	}
-	return firstErr
+	return nil
 }
