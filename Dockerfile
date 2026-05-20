@@ -15,8 +15,15 @@ COPY vendor-local/ ./vendor-local/
 # Download dependencies
 RUN GONOSUMDB="*" GOFLAGS="-mod=mod" GOPROXY="direct" go mod download
 
+# Install swag for swagger doc generation
+RUN GONOSUMDB="*" GOFLAGS="-mod=mod" GOPROXY="direct" \
+    go install github.com/swaggo/swag/cmd/swag@latest
+
 # Copy source
 COPY . .
+
+# Regenerate swagger docs from annotations
+RUN swag init -g cmd/api/main.go --parseDependency --parseInternal --quiet
 
 # Build binary — optimized, stripped
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \

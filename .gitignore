@@ -2,6 +2,11 @@
 /api
 coverage.out
 
+# ── Generated swagger docs (regenerated during docker build) ──
+docs/docs.go
+docs/swagger.json
+docs/swagger.yaml
+
 # ── Environment ───────────────────────────────────────────
 .env
 .env.local
