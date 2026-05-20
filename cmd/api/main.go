@@ -39,7 +39,7 @@ import (
 	httpswagger "github.com/swaggo/http-swagger/v2"
 
 	"languagetool-backend/internal/cache"
-	_ "languagetool-backend/docs"
+	"languagetool-backend/docs"
 	"languagetool-backend/internal/dictionary"
 	"languagetool-backend/internal/languagetool"
 	"languagetool-backend/internal/middleware"
@@ -112,13 +112,15 @@ func main() {
 		r.Get("/v1/ws", wsHandler.ServeWS)
 	})
 
-	// Swagger UI (no auth)
+	// Swagger UI (no auth) — host is overridden per-request so the "Try it out"
+	// button targets the correct server (localhost in dev, production domain in prod).
 	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/docs/index.html", http.StatusMovedPermanently)
 	})
-	r.Get("/docs/*", httpswagger.Handler(
-		httpswagger.URL("/docs/doc.json"),
-	))
+	r.Get("/docs/*", func(w http.ResponseWriter, r *http.Request) {
+		docs.SwaggerInfo.Host = r.Host
+		httpswagger.Handler(httpswagger.URL("/docs/doc.json")).ServeHTTP(w, r)
+	})
 
 	// Health (no auth)
 	r.Get("/v1/health", healthHandler(ltClient, redis, wsHandler))
