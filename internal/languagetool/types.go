@@ -3,6 +3,8 @@ package languagetool
 type CheckRequest struct {
 	Text     string `json:"text"`
 	Language string `json:"language"`
+	// Optional user identifier — used to filter matches against the user's custom dictionary
+	ClientID string `json:"clientId,omitempty"`
 	// "default" | "picky" — picky enables extra style/punctuation rules
 	Level string `json:"level"`
 	// BCP 47 code of the user's native language — enables false-friends detection (e.g. "de-DE" for a German speaker writing English)

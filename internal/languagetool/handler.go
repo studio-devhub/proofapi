@@ -9,22 +9,26 @@ import (
 	"time"
 
 	"languagetool-backend/internal/cache"
+	"languagetool-backend/internal/dictionary"
 )
+
+
 
 const cachePrefix = "lt:check"
 const cacheTTL = 5 * time.Minute
 
 type Handler struct {
-	client *Client
-	redis  *cache.Redis
-	logger *slog.Logger
+	client  *Client
+	redis   *cache.Redis
+	dictSvc *dictionary.Service
+	logger  *slog.Logger
 }
 
-func NewHandler(client *Client, redis *cache.Redis, logger *slog.Logger) *Handler {
+func NewHandler(client *Client, redis *cache.Redis, dictSvc *dictionary.Service, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Handler{client: client, redis: redis, logger: logger}
+	return &Handler{client: client, redis: redis, dictSvc: dictSvc, logger: logger}
 }
 
 // Check performs grammar and spell checking on the provided text.
@@ -71,10 +75,16 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Warn("redis get error", "err", err)
 	}
+	clientID := r.Header.Get("X-Client-ID")
+	if clientID == "" {
+		clientID = req.ClientID
+	}
+
 	if hit {
 		ttl, _ := h.redis.TTL(r.Context(), cacheKey)
 		cached.Cached = true
 		cached.ExpiresIn = int(ttl.Seconds())
+		cached.Matches = h.filterByDict(r.Context(), clientID, req.Text, cached.Matches)
 		writeJSON(w, http.StatusOK, cached)
 		return
 	}
@@ -94,6 +104,7 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	result.Matches = h.filterByDict(r.Context(), clientID, req.Text, result.Matches)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -151,6 +162,14 @@ func (h *Handler) ClearCache(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
+}
+
+func (h *Handler) filterByDict(ctx context.Context, clientID, text string, matches []Match) []Match {
+	if h.dictSvc == nil || clientID == "" {
+		return matches
+	}
+	wordSet := h.dictSvc.GetWordSet(ctx, clientID)
+	return FilterMatches(text, matches, wordSet)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

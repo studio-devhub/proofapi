@@ -11,8 +11,10 @@ import (
 	"github.com/gorilla/websocket"
 
 	"languagetool-backend/internal/cache"
+	"languagetool-backend/internal/dictionary"
 	"languagetool-backend/internal/languagetool"
 )
+
 
 const (
 	debounceMs     = 150 * time.Millisecond // optimized: 400ms → 150ms
@@ -25,11 +27,12 @@ const (
 )
 
 type Conn struct {
-	id     string
-	conn   *websocket.Conn
-	lt     *languagetool.Client
-	redis  *cache.Redis
-	logger *slog.Logger
+	id      string
+	conn    *websocket.Conn
+	lt      *languagetool.Client
+	redis   *cache.Redis
+	dictSvc *dictionary.Service
+	logger  *slog.Logger
 
 	send   chan OutgoingMessage
 	ctx    context.Context
@@ -45,18 +48,20 @@ func NewConn(
 	conn *websocket.Conn,
 	lt *languagetool.Client,
 	redis *cache.Redis,
+	dictSvc *dictionary.Service,
 	logger *slog.Logger,
 ) *Conn {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Conn{
-		id:     id,
-		conn:   conn,
-		lt:     lt,
-		redis:  redis,
-		logger: logger,
-		send:   make(chan OutgoingMessage, 64),
-		ctx:    ctx,
-		cancel: cancel,
+		id:      id,
+		conn:    conn,
+		lt:      lt,
+		redis:   redis,
+		dictSvc: dictSvc,
+		logger:  logger,
+		send:    make(chan OutgoingMessage, 64),
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 }
 
@@ -211,12 +216,14 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 	if err != nil {
 		c.logger.Warn("redis get error", "err", err)
 	}
+	wordSet := c.getWordSet(msg.ClientID)
+
 	if hit {
 		c.send <- OutgoingMessage{
 			Type:  TypeResult,
 			SeqID: msg.SeqID,
 			Payload: CheckPayload{
-				Matches:   cached.Matches,
+				Matches:   languagetool.FilterMatches(msg.Text, cached.Matches, wordSet),
 				Language:  cached.Language,
 				Cached:    true,
 				LatencyMs: time.Since(start).Milliseconds(),
@@ -253,7 +260,7 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 		Type:  TypeResult,
 		SeqID: msg.SeqID,
 		Payload: CheckPayload{
-			Matches:   result.Matches,
+			Matches:   languagetool.FilterMatches(msg.Text, result.Matches, wordSet),
 			Language:  result.Language,
 			Cached:    false,
 			LatencyMs: time.Since(start).Milliseconds(),
@@ -262,6 +269,13 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 }
 
 // ── Helpers ───────────────────────────────────────────────
+
+func (c *Conn) getWordSet(clientID string) map[string]struct{} {
+	if c.dictSvc == nil || clientID == "" {
+		return nil
+	}
+	return c.dictSvc.GetWordSet(c.ctx, clientID)
+}
 
 func (c *Conn) sendError(msg string, seqID int) {
 	select {

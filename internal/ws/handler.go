@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"languagetool-backend/internal/cache"
+	"languagetool-backend/internal/dictionary"
 	"languagetool-backend/internal/languagetool"
 )
 
@@ -37,19 +38,21 @@ var upgrader = websocket.Upgrader{
 }
 
 type Handler struct {
-	hub    *Hub
-	lt     *languagetool.Client
-	redis  *cache.Redis
-	logger *slog.Logger
+	hub     *Hub
+	lt      *languagetool.Client
+	redis   *cache.Redis
+	dictSvc *dictionary.Service
+	logger  *slog.Logger
 }
 
 func NewHandler(
 	hub *Hub,
 	lt *languagetool.Client,
 	redis *cache.Redis,
+	dictSvc *dictionary.Service,
 	logger *slog.Logger,
 ) *Handler {
-	return &Handler{hub: hub, lt: lt, redis: redis, logger: logger}
+	return &Handler{hub: hub, lt: lt, redis: redis, dictSvc: dictSvc, logger: logger}
 }
 
 // ServeWS upgrades HTTP → WebSocket and runs the connection
@@ -62,7 +65,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
 
-	conn := NewConn(id, raw, h.lt, h.redis, h.logger)
+	conn := NewConn(id, raw, h.lt, h.redis, h.dictSvc, h.logger)
 
 	h.hub.Register(conn)
 	defer h.hub.Unregister(id)

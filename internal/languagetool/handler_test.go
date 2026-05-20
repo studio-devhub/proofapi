@@ -43,7 +43,7 @@ func setupHandler(t *testing.T, ltResponse any, ltStatus int) *handlerSuite {
 		BaseURL: ltSrv.URL, Timeout: 5 * time.Second,
 	})
 
-	handler := languagetool.NewHandler(client, r, slog.Default())
+	handler := languagetool.NewHandler(client, r, nil, slog.Default())
 	return &handlerSuite{handler: handler, redis: r, mr: mr, ltServer: ltSrv}
 }
 
@@ -106,7 +106,7 @@ func TestHandler_Check_CacheHit(t *testing.T) {
 	mr := miniredis.RunT(t)
 	r, _ := cache.NewRedis(cache.Config{Host: mr.Host(), Port: mr.Port()})
 	client := languagetool.NewClient(languagetool.Config{BaseURL: ltSrv.URL, Timeout: 5 * time.Second})
-	handler := languagetool.NewHandler(client, r, slog.Default())
+	handler := languagetool.NewHandler(client, r, nil, slog.Default())
 
 	body := map[string]any{"text": "Hello world", "language": "en-US"}
 
@@ -173,7 +173,7 @@ func TestHandler_Check_LTUnavailable(t *testing.T) {
 		BaseURL: "http://localhost:19998",
 		Timeout: 100 * time.Millisecond,
 	})
-	handler := languagetool.NewHandler(client, r, slog.Default())
+	handler := languagetool.NewHandler(client, r, nil, slog.Default())
 
 	w := doPost(t, handler.Check, map[string]any{"text": "Hello world", "language": "en-US"})
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
@@ -195,7 +195,7 @@ func TestHandler_Check_DefaultLanguage(t *testing.T) {
 	mr := miniredis.RunT(t)
 	r, _ := cache.NewRedis(cache.Config{Host: mr.Host(), Port: mr.Port()})
 	client := languagetool.NewClient(languagetool.Config{BaseURL: ltSrv.URL, Timeout: 5 * time.Second})
-	handler := languagetool.NewHandler(client, r, slog.Default())
+	handler := languagetool.NewHandler(client, r, nil, slog.Default())
 
 	doPost(t, handler.Check, map[string]any{"text": "Hello world"})
 	time.Sleep(50 * time.Millisecond)

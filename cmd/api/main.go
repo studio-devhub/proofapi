@@ -31,12 +31,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	httpswagger "github.com/swaggo/http-swagger/v2"
 
 	"languagetool-backend/internal/cache"
 	_ "languagetool-backend/docs"
+	"languagetool-backend/internal/dictionary"
 	"languagetool-backend/internal/languagetool"
 	"languagetool-backend/internal/middleware"
 	"languagetool-backend/internal/ws"
@@ -68,15 +72,20 @@ func main() {
 		Timeout: 30 * time.Second,
 	})
 
-	restHandler := languagetool.NewHandler(ltClient, redis, logger)
+	// ── Dictionary (DynamoDB + Redis) ─────────────────────────
+	dictSvc := buildDictionaryService(redis, logger)
+
+	restHandler := languagetool.NewHandler(ltClient, redis, dictSvc, logger)
 	hub := ws.NewHub(logger)
-	wsHandler := ws.NewHandler(hub, ltClient, redis, logger)
+	wsHandler := ws.NewHandler(hub, ltClient, redis, dictSvc, logger)
 
 	r := chi.NewRouter()
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.RateLimit(200, time.Minute))
+
+	dictHandler := dictionary.NewHTTPHandler(dictSvc, logger)
 
 	// REST routes
 	r.Group(func(r chi.Router) {
@@ -85,6 +94,16 @@ func main() {
 		r.Post("/v1/check", restHandler.Check)
 		r.Get("/v1/languages", restHandler.Languages)
 		r.Delete("/v1/cache", restHandler.ClearCache)
+	})
+
+	// Dictionary routes (require both API key + X-Client-ID)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.APIKey(apiKey))
+		r.Use(middleware.RequireClientID)
+		r.Post("/v1/dictionary/words", dictHandler.AddWord)
+		r.Get("/v1/dictionary/words", dictHandler.ListWords)
+		r.Delete("/v1/dictionary/words/{word}", dictHandler.RemoveWord)
+		r.Delete("/v1/dictionary", dictHandler.ClearAll)
 	})
 
 	// WebSocket route
@@ -161,6 +180,32 @@ func healthHandler(ltClient *languagetool.Client, redis *cache.Redis, wsHandler 
 			"cacheStats":   redis.Stats(ctx),
 		})
 	}
+}
+
+func buildDictionaryService(redis *cache.Redis, logger *slog.Logger) *dictionary.Service {
+	region := getEnv("AWS_REGION", "us-west-2")
+	tableName := getEnv("DYNAMODB_TABLE", "proofapi-dictionary")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
+	if err != nil {
+		logger.Error("aws config failed, dictionary disabled", "err", err)
+		return nil
+	}
+
+	dynamoOpts := []func(*dynamodb.Options){}
+	if endpoint := os.Getenv("DYNAMODB_ENDPOINT"); endpoint != "" {
+		dynamoOpts = append(dynamoOpts, func(o *dynamodb.Options) {
+			o.BaseEndpoint = aws.String(endpoint)
+		})
+	}
+
+	dynamoClient := dynamodb.NewFromConfig(awsCfg, dynamoOpts...)
+	store := dictionary.NewDynamoStore(dynamoClient, tableName)
+	dictCache := dictionary.NewDictCache(redis)
+	return dictionary.NewService(store, dictCache, logger)
 }
 
 func getEnv(key, fallback string) string {

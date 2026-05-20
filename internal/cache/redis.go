@@ -89,6 +89,33 @@ func (r *Redis) Ping(ctx context.Context) bool {
 	return r.client.Ping(ctx).Err() == nil
 }
 
+// ── Set operations (for dictionary cache) ─────────────────
+
+func (r *Redis) SAdd(ctx context.Context, key string, members ...any) error {
+	return r.client.SAdd(ctx, key, members...).Err()
+}
+
+func (r *Redis) SRem(ctx context.Context, key string, members ...any) error {
+	return r.client.SRem(ctx, key, members...).Err()
+}
+
+func (r *Redis) SMembers(ctx context.Context, key string) ([]string, error) {
+	return r.client.SMembers(ctx, key).Result()
+}
+
+func (r *Redis) SExists(ctx context.Context, key string) (bool, error) {
+	n, err := r.client.Exists(ctx, key).Result()
+	return n > 0, err
+}
+
+func (r *Redis) Expire(ctx context.Context, key string, ttl time.Duration) error {
+	return r.client.Expire(ctx, key, ttl).Err()
+}
+
+func (r *Redis) Del(ctx context.Context, keys ...string) error {
+	return r.client.Del(ctx, keys...).Err()
+}
+
 type Stats struct {
 	Hits       int64  `json:"hits"`
 	Misses     int64  `json:"misses"`

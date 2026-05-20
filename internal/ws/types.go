@@ -8,6 +8,7 @@ type IncomingMessage struct {
 	Type               string `json:"type"`
 	Text               string `json:"text"`
 	Language           string `json:"language,omitempty"`
+	ClientID             string `json:"clientId,omitempty"`
 	Level              string `json:"level,omitempty"`
 	MotherTongue       string `json:"motherTongue,omitempty"`
 	EnabledCategories  string `json:"enabledCategories,omitempty"`

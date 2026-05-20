@@ -58,6 +58,9 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_secret}
       - API_KEY=${API_KEY:-dev-secret-key}
+      - AWS_REGION=${AWS_REGION:-us-west-2}
+      - DYNAMODB_TABLE=${DYNAMODB_TABLE:-proofapi-dictionary}
+      - DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT:-}
     depends_on:
       languagetool:
         condition: service_healthy
