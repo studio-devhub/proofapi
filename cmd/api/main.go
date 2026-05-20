@@ -119,6 +119,11 @@ func main() {
 	})
 	r.Get("/docs/*", func(w http.ResponseWriter, r *http.Request) {
 		docs.SwaggerInfo.Host = r.Host
+		scheme := "http"
+		if r.Header.Get("X-Forwarded-Proto") == "https" || r.TLS != nil {
+			scheme = "https"
+		}
+		docs.SwaggerInfo.Schemes = []string{scheme}
 		httpswagger.Handler(httpswagger.URL("/docs/doc.json")).ServeHTTP(w, r)
 	})
 
