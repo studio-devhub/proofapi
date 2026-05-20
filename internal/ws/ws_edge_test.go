@@ -57,7 +57,7 @@ func setupEdge(t *testing.T, delay time.Duration) *testSuite {
 		BaseURL: ltSrv.URL, Timeout: 5 * time.Second,
 	})
 	hub := wspkg.NewHub(slog.Default())
-	handler := wspkg.NewHandler(hub, ltClient, r, nil, slog.Default())
+	handler := wspkg.NewHandler(hub, "test-key", ltClient, r, nil, slog.Default())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/ws", handler.ServeWS)
@@ -211,6 +211,13 @@ func TestWS_50ConcurrentConnections(t *testing.T) {
 				return
 			}
 			defer conn.Close()
+
+			// Auth first
+			auth, _ := json.Marshal(wspkg.AuthMessage{Type: wspkg.TypeAuth, Key: "test-key"})
+			if err := conn.WriteMessage(websocket.TextMessage, auth); err != nil {
+				errors <- err
+				return
+			}
 
 			// Read ack
 			conn.SetReadDeadline(time.Now().Add(3 * time.Second))

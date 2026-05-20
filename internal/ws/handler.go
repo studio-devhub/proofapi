@@ -40,6 +40,7 @@ var upgrader = websocket.Upgrader{
 
 type Handler struct {
 	hub     *Hub
+	apiKey  string
 	lt      *languagetool.Client
 	redis   *cache.Redis
 	dictSvc *dictionary.Service
@@ -48,15 +49,18 @@ type Handler struct {
 
 func NewHandler(
 	hub *Hub,
+	apiKey string,
 	lt *languagetool.Client,
 	redis *cache.Redis,
 	dictSvc *dictionary.Service,
 	logger *slog.Logger,
 ) *Handler {
-	return &Handler{hub: hub, lt: lt, redis: redis, dictSvc: dictSvc, logger: logger}
+	return &Handler{hub: hub, apiKey: apiKey, lt: lt, redis: redis, dictSvc: dictSvc, logger: logger}
 }
 
-// ServeWS upgrades HTTP → WebSocket and runs the connection
+// ServeWS upgrades HTTP → WebSocket and runs the connection.
+// Auth happens inside the connection via first-message auth (TypeAuth),
+// not at the HTTP middleware level — this keeps the API key out of URLs/logs.
 func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	raw, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -65,8 +69,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := newConnID()
-
-	conn := NewConn(id, raw, h.lt, h.redis, h.dictSvc, h.logger)
+	conn := NewConn(id, h.apiKey, raw, h.lt, h.redis, h.dictSvc, h.logger)
 
 	h.hub.Register(conn)
 	defer h.hub.Unregister(id)

@@ -4,6 +4,13 @@ import "languagetool-backend/internal/languagetool"
 
 // ── Incoming (Client → Server) ────────────────────────────
 
+// AuthMessage is the required first message after a WebSocket connection.
+// Using a dedicated message avoids embedding the API key in the URL query string.
+type AuthMessage struct {
+	Type string `json:"type"`
+	Key  string `json:"key"`
+}
+
 type IncomingMessage struct {
 	Type               string `json:"type"`
 	Text               string `json:"text"`
@@ -36,10 +43,11 @@ type CheckPayload struct {
 
 // Message types
 const (
-	TypeCheck   = "check"    // client sends text to check
-	TypeResult  = "result"   // server sends corrections
-	TypeError   = "error"    // server sends error
-	TypePing    = "ping"     // client keepalive
-	TypePong    = "pong"     // server keepalive response
-	TypeAck     = "ack"      // server acknowledges connection
+	TypeAuth   = "auth"    // client sends API key as first message
+	TypeCheck  = "check"   // client sends text to check
+	TypeResult = "result"  // server sends corrections
+	TypeError  = "error"   // server sends error
+	TypePing   = "ping"    // client keepalive
+	TypePong   = "pong"    // server keepalive response
+	TypeAck    = "ack"     // server acknowledges connection
 )

@@ -514,7 +514,9 @@ export function GrammarCheckerWithDictionary() {
 
 Best for: real-time checking as the user types. The server debounces 150ms — no client-side debounce needed.
 
-> **WebSocket default:** if `level`/`enabledCategories` are omitted, the server automatically uses `level=picky` with all major categories for maximum accuracy.
+> **Auth:** Connect without any credentials in the URL. Send `{"type":"auth","key":"<API_KEY>"}` as the **first message** after `onopen`. The server replies with `{"type":"ack"}` on success or `{"type":"error"}` on failure. This keeps the API key out of server logs and browser history.
+>
+> **Default options:** if `level`/`enabledCategories` are omitted, the server automatically uses `level=picky` with all major categories for maximum accuracy.
 
 ### WebSocket Hook
 
@@ -538,14 +540,32 @@ export function useSpellCheck() {
 
   const connect = useCallback(() => {
     wsRef.current?.close();
-    const ws = new WebSocket(`${WS_URL}?api_key=${API_KEY}`);
+    // Do NOT put the API key in the URL — it would appear in server logs.
+    // Send it as the first WebSocket message instead (see onopen below).
+    const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
 
-    ws.onopen    = () => { setStatus('connected'); clearTimeout(reconnectRef.current); };
+    ws.onopen = () => {
+      // First message must be auth; server replies with {"type":"ack"} on success
+      // or {"type":"error"} on failure.
+      ws.send(JSON.stringify({ type: 'auth', key: API_KEY }));
+      clearTimeout(reconnectRef.current);
+    };
     ws.onclose   = () => { setStatus('disconnected'); reconnectRef.current = setTimeout(connect, 2000); };
     ws.onerror   = () => { setStatus('error'); ws.close(); };
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
+      if (msg.type === 'ack') {
+        // Auth accepted — connection is ready
+        setStatus('connected');
+        return;
+      }
+      if (msg.type === 'error' && wsRef.current?.readyState !== WebSocket.OPEN) {
+        // Auth rejected — close and do not reconnect
+        setStatus('error');
+        ws.close();
+        return;
+      }
       if (msg.type === 'result' && msg.payload) {
         setResult({
           matches:   msg.payload.matches   ?? [],

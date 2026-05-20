@@ -31,6 +31,7 @@ const (
 
 type Conn struct {
 	id      string
+	apiKey  string
 	conn    *websocket.Conn
 	lt      *languagetool.Client
 	redis   *cache.Redis
@@ -48,6 +49,7 @@ type Conn struct {
 
 func NewConn(
 	id string,
+	apiKey string,
 	conn *websocket.Conn,
 	lt *languagetool.Client,
 	redis *cache.Redis,
@@ -57,6 +59,7 @@ func NewConn(
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Conn{
 		id:      id,
+		apiKey:  apiKey,
 		conn:    conn,
 		lt:      lt,
 		redis:   redis,
@@ -71,18 +74,8 @@ func NewConn(
 func (c *Conn) Run() {
 	var wg sync.WaitGroup
 	wg.Add(2)
-
 	go func() { defer wg.Done(); c.writePump() }()
 	go func() { defer wg.Done(); c.readPump() }()
-
-	c.safeSend(OutgoingMessage{
-		Type: TypeAck,
-		Payload: map[string]string{
-			"connId": c.id,
-			"status": "connected",
-		},
-	})
-
 	wg.Wait()
 	c.cleanup()
 }
@@ -97,6 +90,35 @@ func (c *Conn) readPump() {
 	c.conn.SetPongHandler(func(string) error {
 		c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
 		return nil
+	})
+
+	// First message must be {"type":"auth","key":"<api-key>"}.
+	// This avoids embedding the API key in the URL query string where it
+	// would appear in nginx access logs and browser history.
+	c.conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_, raw, err := c.conn.ReadMessage()
+	if err != nil {
+		return
+	}
+	var authMsg AuthMessage
+	if err := json.Unmarshal(raw, &authMsg); err != nil || authMsg.Type != TypeAuth {
+		c.sendError("first message must be {\"type\":\"auth\",\"key\":\"<api-key>\"}", 0)
+		return
+	}
+	if authMsg.Key != c.apiKey {
+		c.sendError("unauthorized", 0)
+		c.logger.Warn("ws auth failed", "conn", c.id)
+		return
+	}
+	c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
+
+	// Auth passed — send ack now (not before, so failed auth never gets ack)
+	c.safeSend(OutgoingMessage{
+		Type: TypeAck,
+		Payload: map[string]string{
+			"connId": c.id,
+			"status": "connected",
+		},
 	})
 
 	for {

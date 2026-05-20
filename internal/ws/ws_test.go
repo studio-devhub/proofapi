@@ -71,7 +71,7 @@ func setup(t *testing.T) *testSuite {
 	})
 
 	hub := wspkg.NewHub(slog.Default())
-	handler := wspkg.NewHandler(hub, ltClient, r, nil, slog.Default())
+	handler := wspkg.NewHandler(hub, "test-key", ltClient, r, nil, slog.Default())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/ws", handler.ServeWS)
@@ -92,6 +92,11 @@ func dial(t *testing.T, url string) *websocket.Conn {
 	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
+
+	// First message must be auth; server responds with ack (read by caller)
+	auth, _ := json.Marshal(wspkg.AuthMessage{Type: wspkg.TypeAuth, Key: "test-key"})
+	require.NoError(t, conn.WriteMessage(websocket.TextMessage, auth))
+
 	return conn
 }
 

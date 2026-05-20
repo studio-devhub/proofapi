@@ -77,7 +77,7 @@ func main() {
 
 	restHandler := languagetool.NewHandler(ltClient, redis, dictSvc, logger)
 	hub := ws.NewHub(logger)
-	wsHandler := ws.NewHandler(hub, ltClient, redis, dictSvc, logger)
+	wsHandler := ws.NewHandler(hub, apiKey, ltClient, redis, dictSvc, logger)
 
 	r := chi.NewRouter()
 	r.Use(middleware.CORS)
@@ -107,11 +107,8 @@ func main() {
 		r.Delete("/v1/dictionary", dictHandler.ClearAll)
 	})
 
-	// WebSocket route
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.APIKeyWS(apiKey))
-		r.Get("/v1/ws", wsHandler.ServeWS)
-	})
+	// WebSocket route — auth via first message {type:"auth",key:"<api-key>"}
+	r.Get("/v1/ws", wsHandler.ServeWS)
 
 	// Swagger UI (no auth) — host is overridden per-request so the "Try it out"
 	// button targets the correct server (localhost in dev, production domain in prod).

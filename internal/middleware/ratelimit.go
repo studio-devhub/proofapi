@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -33,7 +34,13 @@ func RateLimit(limit int, window time.Duration) func(http.Handler) http.Handler 
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := r.RemoteAddr
+			// chi's RealIP middleware already rewrites r.RemoteAddr with the
+			// real client IP from X-Real-IP/X-Forwarded-For. Strip the port
+			// so every connection from the same client shares one bucket.
+			ip, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				ip = r.RemoteAddr
+			}
 			now := time.Now()
 
 			mu.Lock()

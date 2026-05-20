@@ -88,7 +88,7 @@ func newTestServer(t *testing.T, ltDelay time.Duration) *testServer {
 
 	restHandler := languagetool.NewHandler(ltClient, r, nil, slog.Default())
 	hub := wspkg.NewHub(slog.Default())
-	wsHandler := wspkg.NewHandler(hub, ltClient, r, nil, slog.Default())
+	wsHandler := wspkg.NewHandler(hub, "test-key", ltClient, r, nil, slog.Default())
 
 	router := chi.NewRouter()
 
@@ -439,6 +439,10 @@ func TestLoad_WebSocket_1000_Connections(t *testing.T) {
 			}
 			defer conn.Close()
 
+			// Auth first
+			authMsg, _ := json.Marshal(wspkg.AuthMessage{Type: wspkg.TypeAuth, Key: "test-key"})
+			conn.WriteMessage(websocket.TextMessage, authMsg)
+
 			// Read ack
 			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			_, raw, err := conn.ReadMessage()
@@ -523,7 +527,9 @@ func TestLoad_WebSocket_Persistent_1000_Messages(t *testing.T) {
 			}
 			defer conn.Close()
 
-			// Read ack
+			// Auth first, then read ack
+			authMsg, _ := json.Marshal(wspkg.AuthMessage{Type: wspkg.TypeAuth, Key: "test-key"})
+			conn.WriteMessage(websocket.TextMessage, authMsg)
 			conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 			conn.ReadMessage()
 
@@ -631,6 +637,9 @@ func TestLoad_Mixed_REST_WS_1000(t *testing.T) {
 			}
 			defer conn.Close()
 
+			// Auth first, then read ack
+			authMsg, _ := json.Marshal(wspkg.AuthMessage{Type: wspkg.TypeAuth, Key: "test-key"})
+			conn.WriteMessage(websocket.TextMessage, authMsg)
 			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			conn.ReadMessage() // ack
 
