@@ -72,6 +72,20 @@ func main() {
 		Timeout: 30 * time.Second,
 	})
 
+	// Warm up the LT JVM so the first real user request isn't slow.
+	go func() {
+		time.Sleep(5 * time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if _, err := ltClient.Check(ctx, languagetool.CheckRequest{
+			Text: "This is a warmup request to initialize the language model.", Language: "en-US",
+		}); err != nil {
+			slog.Warn("lt warmup failed", "err", err)
+		} else {
+			slog.Info("lt warmup complete")
+		}
+	}()
+
 	// ── Dictionary (DynamoDB + Redis) ─────────────────────────
 	dictSvc := buildDictionaryService(redis, logger)
 

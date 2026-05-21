@@ -1,9 +1,11 @@
 package languagetool
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,6 +31,7 @@ func NewClient(cfg Config) *Client {
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 100,
 				IdleConnTimeout:     90 * time.Second,
+				DisableCompression:  true, // we handle gzip manually below
 			},
 		},
 	}
@@ -70,6 +73,7 @@ func (c *Client) Check(ctx context.Context, req CheckRequest) (*CheckResponse, e
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	httpReq.Header.Set("Accept-Encoding", "gzip")
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -81,11 +85,21 @@ func (c *Client) Check(ctx context.Context, req CheckRequest) (*CheckResponse, e
 		return nil, fmt.Errorf("lt responded %d", resp.StatusCode)
 	}
 
+	respBody := io.Reader(resp.Body)
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("gzip reader failed: %w", err)
+		}
+		defer gr.Close()
+		respBody = gr
+	}
+
 	var result struct {
 		Matches  []Match  `json:"matches"`
 		Language Language `json:"language"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(respBody).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode failed: %w", err)
 	}
 
