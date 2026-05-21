@@ -42,7 +42,7 @@ type Handler struct {
 	hub     *Hub
 	apiKey  string
 	lt      *languagetool.Client
-	redis   *cache.Redis
+	redis   cache.CheckCache
 	dictSvc *dictionary.Service
 	logger  *slog.Logger
 }
@@ -51,7 +51,7 @@ func NewHandler(
 	hub *Hub,
 	apiKey string,
 	lt *languagetool.Client,
-	redis *cache.Redis,
+	redis cache.CheckCache,
 	dictSvc *dictionary.Service,
 	logger *slog.Logger,
 ) *Handler {

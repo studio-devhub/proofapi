@@ -86,12 +86,18 @@ func main() {
 		}
 	}()
 
+	// ── L1 + L2 tiered cache ──────────────────────────────────
+	// L1: in-process LRU (1000 entries, 5min TTL) — zero network latency
+	// L2: Redis (30min TTL) — shared across restarts and instances
+	l1 := cache.NewLRUCache(1000, 5*time.Minute)
+	tiered := cache.NewTieredCache(l1, redis)
+
 	// ── Dictionary (DynamoDB + Redis) ─────────────────────────
 	dictSvc := buildDictionaryService(redis, logger)
 
-	restHandler := languagetool.NewHandler(ltClient, redis, dictSvc, logger)
+	restHandler := languagetool.NewHandler(ltClient, tiered, dictSvc, logger)
 	hub := ws.NewHub(logger)
-	wsHandler := ws.NewHandler(hub, apiKey, ltClient, redis, dictSvc, logger)
+	wsHandler := ws.NewHandler(hub, apiKey, ltClient, tiered, dictSvc, logger)
 
 	r := chi.NewRouter()
 	r.Use(middleware.CORS)

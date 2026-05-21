@@ -34,7 +34,7 @@ type Conn struct {
 	apiKey  string
 	conn    *websocket.Conn
 	lt      *languagetool.Client
-	redis   *cache.Redis
+	redis   cache.CheckCache
 	dictSvc *dictionary.Service
 	logger  *slog.Logger
 
@@ -52,7 +52,7 @@ func NewConn(
 	apiKey string,
 	conn *websocket.Conn,
 	lt *languagetool.Client,
-	redis *cache.Redis,
+	redis cache.CheckCache,
 	dictSvc *dictionary.Service,
 	logger *slog.Logger,
 ) *Conn {

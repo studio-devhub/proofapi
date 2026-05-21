@@ -22,12 +22,12 @@ const cacheTTL = 30 * time.Minute
 
 type Handler struct {
 	client  *Client
-	redis   *cache.Redis
+	redis   cache.CheckCache
 	dictSvc *dictionary.Service
 	logger  *slog.Logger
 }
 
-func NewHandler(client *Client, redis *cache.Redis, dictSvc *dictionary.Service, logger *slog.Logger) *Handler {
+func NewHandler(client *Client, redis cache.CheckCache, dictSvc *dictionary.Service, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
