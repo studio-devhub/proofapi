@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     environment:
       - Java_Xmx=2g
-      - Java_Xms=512m
+      - Java_Xms=1g
       - langtool_languageModel=/ngrams
     volumes:
       - ./ngrams:/ngrams

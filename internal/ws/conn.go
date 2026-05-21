@@ -25,7 +25,7 @@ const (
 	pongTimeout    = 60 * time.Second
 	pingInterval   = 30 * time.Second
 	maxMessageSize = 32 * 1024 // 32KB
-	cacheTTL       = 5 * time.Minute
+	cacheTTL       = 30 * time.Minute
 	cachePrefix    = "lt:ws"
 )
 
@@ -235,7 +235,9 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 	motherTongue := msg.MotherTongue
 	enabledCategories := msg.EnabledCategories
 	if enabledCategories == "" {
-		enabledCategories = "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY,COMPOUNDING,MISC"
+		// Real-time: SPELLING+GRAMMAR only for speed (~2-3x faster than full set).
+		// Client can pass enabledCategories explicitly for a thorough check.
+		enabledCategories = "SPELLING,GRAMMAR"
 	}
 
 	// Cache hit

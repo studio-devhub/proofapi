@@ -18,7 +18,7 @@ var clientIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]{1,128}$`)
 
 
 const cachePrefix = "lt:check"
-const cacheTTL = 5 * time.Minute
+const cacheTTL = 30 * time.Minute
 
 type Handler struct {
 	client  *Client
