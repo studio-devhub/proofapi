@@ -182,7 +182,8 @@ func TestIntegration_CacheClear(t *testing.T) {
 	// Clear cache
 	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/v1/cache", nil)
 	req.Header.Set("X-API-Key", "test-key")
-	resp, _ := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
