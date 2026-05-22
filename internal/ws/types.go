@@ -12,17 +12,11 @@ type AuthMessage struct {
 }
 
 type IncomingMessage struct {
-	Type               string `json:"type"`
-	Text               string `json:"text"`
-	Language           string `json:"language,omitempty"`
-	ClientID             string `json:"clientId,omitempty"`
-	Level              string `json:"level,omitempty"`
-	MotherTongue       string `json:"motherTongue,omitempty"`
-	EnabledCategories  string `json:"enabledCategories,omitempty"`
-	DisabledCategories string `json:"disabledCategories,omitempty"`
-	EnabledRules       string `json:"enabledRules,omitempty"`
-	DisabledRules      string `json:"disabledRules,omitempty"`
-	SeqID              int    `json:"seqId"`
+	Type     string `json:"type"`
+	Text     string `json:"text"`
+	Language string `json:"language,omitempty"`
+	ClientID string `json:"clientId,omitempty"`
+	SeqID    int    `json:"seqId"`
 }
 
 // ── Outgoing (Server → Client) ────────────────────────────

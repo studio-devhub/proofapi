@@ -39,29 +39,11 @@ func NewClient(cfg Config) *Client {
 
 func (c *Client) Check(ctx context.Context, req CheckRequest) (*CheckResponse, error) {
 	body := url.Values{
-		"text":     {req.Text},
-		"language": {req.Language},
-		"level":    {req.Level},
-	}
-	if req.MotherTongue != "" {
-		body.Set("motherTongue", req.MotherTongue)
-	}
-	if req.EnabledRules != "" {
-		body.Set("enabledRules", req.EnabledRules)
-	}
-	if req.DisabledRules != "" {
-		body.Set("disabledRules", req.DisabledRules)
-	}
-	if req.EnabledCategories != "" {
-		body.Set("enabledCategories", req.EnabledCategories)
-	}
-	if req.DisabledCategories != "" {
-		body.Set("disabledCategories", req.DisabledCategories)
-	}
-	if req.EnabledOnly {
-		body.Set("enabledOnly", "true")
-	} else {
-		body.Set("enabledOnly", "false")
+		"text":              {req.Text},
+		"language":          {req.Language},
+		"level":             {"default"},
+		"enabledCategories": {"SPELLING"},
+		"enabledOnly":       {"true"},
 	}
 
 	httpReq, err := http.NewRequestWithContext(

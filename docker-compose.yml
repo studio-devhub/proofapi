@@ -8,9 +8,6 @@ services:
     environment:
       - Java_Xmx=2g
       - Java_Xms=1g
-      - langtool_languageModel=/ngrams
-    volumes:
-      - ./ngrams:/ngrams
     networks:
       - lt-net
     healthcheck:

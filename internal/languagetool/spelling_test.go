@@ -154,7 +154,6 @@ func TestSpelling_Suggestions(t *testing.T) {
 		resp, err := client.Check(context.Background(), languagetool.CheckRequest{
 			Text:     tc.input,
 			Language: "en-US",
-			Level:    "default",
 		})
 
 		if err != nil {

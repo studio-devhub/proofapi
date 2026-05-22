@@ -60,7 +60,7 @@ func TestClient_Check_Success(t *testing.T) {
 	defer srv.Close()
 
 	result, err := newTestClient(srv.URL).Check(context.Background(), languagetool.CheckRequest{
-		Text: "This are a test", Language: "en-US", Level: "default",
+		Text: "This are a test", Language: "en-US",
 	})
 
 	require.NoError(t, err)

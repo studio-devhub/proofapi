@@ -1,4 +1,4 @@
-.PHONY: up down restart logs test build clean setup help ngrams ssl swagger
+.PHONY: up down restart logs test build clean setup help ssl swagger
 
 include .env
 export
@@ -145,17 +145,14 @@ setup:
 	fi
 
 	@# ── Create required directories ───────────────────────
-	@mkdir -p ngrams nginx
-	@echo "  ✅ Directories ready (ngrams/, nginx/)"
+	@mkdir -p nginx
+	@echo "  ✅ Directories ready (nginx/)"
 
 	@# ── Done ──────────────────────────────────────────────
 	@echo ""
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(GREEN)  All dependencies satisfied!$(NC)"
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@echo ""
-	@echo "  Optional: Download NGrams for better accuracy (~8GB):"
-	@echo "    make ngrams"
 	@echo ""
 	@echo "  $(GREEN)Starting services now...$(NC)"
 	@echo ""
@@ -296,16 +293,6 @@ redis-stats:
 	@docker exec lt-redis redis-cli \
 		-a "$$(grep REDIS_PASSWORD .env | cut -d= -f2)" \
 		info stats | grep -E "hits|misses|keys"
-
-# ── NGrams (optional, improves accuracy) ─────────────────
-## ngrams: Download English NGrams (~8GB, improves accuracy)
-ngrams:
-	@echo "$(YELLOW)Downloading English NGrams (~8GB)...$(NC)"
-	@mkdir -p ngrams
-	@curl -L -C - "https://languagetool.org/download/ngram-data/ngrams-en-20150817.zip" \
-		-o /tmp/ngrams-en.zip
-	@unzip /tmp/ngrams-en.zip -d ngrams/
-	@echo "$(GREEN)✅ NGrams ready. Restart: make restart$(NC)"
 
 # ── Quick API Test ────────────────────────────────────────
 ## curl-test: Quick API test with curl

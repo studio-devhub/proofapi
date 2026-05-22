@@ -34,10 +34,10 @@ func NewHandler(client *Client, redis cache.CheckCache, dictSvc *dictionary.Serv
 	return &Handler{client: client, redis: redis, dictSvc: dictSvc, logger: logger}
 }
 
-// Check performs grammar and spell checking on the provided text.
+// Check performs spell checking on the provided text.
 //
-//	@Summary		Check text for grammar and spelling errors
-//	@Description	Submits text to LanguageTool for analysis. Results are cached in Redis for 5 minutes.\n\n**Maximum suggestions:** set `level=picky` and add `enabledCategories=STYLE,PUNCTUATION,TYPOGRAPHY,GRAMMAR,MISC,CASING`
+//	@Summary		Check text for spelling errors
+//	@Description	Submits text to LanguageTool for spelling analysis. Results are cached in Redis for 30 minutes.
 //	@Tags			grammar
 //	@Accept			json
 //	@Produce		json
@@ -51,8 +51,10 @@ func NewHandler(client *Client, redis cache.CheckCache, dictSvc *dictionary.Serv
 //	@Router			/check [post]
 func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	var req CheckRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 
@@ -64,14 +66,8 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	if req.Language == "" {
 		req.Language = "en-US"
 	}
-	if req.Level == "" {
-		req.Level = "picky"
-	}
-	if req.EnabledCategories == "" && req.EnabledOnly == false {
-		req.EnabledCategories = "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY,COMPOUNDING,MISC"
-	}
 
-	cacheKey := cache.BuildKey(cachePrefix, req.Language, req.Level, req.EnabledCategories, req.MotherTongue, req.Text)
+	cacheKey := cache.BuildKey(cachePrefix, req.Language, req.Text)
 
 	var cached CheckResponse
 	hit, err := h.redis.Get(r.Context(), cacheKey, &cached)
@@ -103,10 +99,14 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Copy the struct before spawning the goroutine to avoid a data race:
+	// the goroutine reads result.Matches for JSON serialisation while the
+	// main goroutine reassigns result.Matches below via filterByDict.
+	resultToCache := *result
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		if err := h.redis.Set(ctx, cacheKey, result, cacheTTL); err != nil {
+		if err := h.redis.Set(ctx, cacheKey, &resultToCache, cacheTTL); err != nil {
 			h.logger.Warn("redis set error", "err", err)
 		}
 	}()

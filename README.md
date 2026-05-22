@@ -1,20 +1,17 @@
 # ProofAPI
 
-A high-performance, production-ready grammar and spell-checking API built with Go. Wraps the open-source [LanguageTool](https://languagetool.org) engine and exposes a clean REST + WebSocket API with Redis caching, API key authentication, rate limiting, and Swagger UI — all orchestrated via Docker Compose.
+A high-performance, production-ready spell-checking API built with Go. Wraps the open-source [LanguageTool](https://languagetool.org) engine and exposes a clean REST + WebSocket API with Redis caching, API key authentication, rate limiting, and Swagger UI — all orchestrated via Docker Compose.
 
 ---
 
 ## Features
 
-- **REST API** — check grammar, spelling, style, punctuation in one request
-- **WebSocket API** — real-time checking as the user types (150ms server-side debounce)
-- **Maximum accuracy mode** — `level=picky` + all major categories enabled by default on WebSocket
-- **Fine-grained rule control** — enable/disable specific rules or categories per request
+- **REST API** — spell checking in one request
+- **WebSocket API** — real-time spell checking as the user types (150ms server-side debounce)
 - **Redis caching** — identical requests served in <1ms after first check
 - **Swagger UI** — interactive API docs at `/docs/index.html`
 - **API key authentication** — all endpoints protected
 - **Rate limiting** — per-IP request throttling with automatic cleanup
-- **NGram support** — optional 14GB language model for context-aware accuracy
 - **50+ languages** — English, French, German, Spanish, Arabic, Chinese, and more
 - **Health endpoint** — real-time status of all services
 - **One-command setup** — `make setup` installs all dependencies and starts the stack
@@ -54,7 +51,7 @@ Client
                   │       │
            ┌──────▼──┐ ┌──▼──────────┐
            │  Redis  │ │LanguageTool │
-           │  Cache  │ │  + NGrams   │
+           │  Cache  │ │ LanguageTool│
            └─────────┘ └────────────┘
 ```
 
@@ -120,16 +117,14 @@ WebSocket also accepts `?api_key=your-api-key` as a query parameter.
 
 ### `POST /v1/check`
 
-Check text for grammar, spelling, style, and punctuation errors.
+Check text for spelling errors.
 
 **Request**
 
 ```json
 {
   "text": "I recieve wierd emails definately",
-  "language": "en-US",
-  "level": "picky",
-  "enabledCategories": "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY"
+  "language": "en-US"
 }
 ```
 
@@ -137,23 +132,7 @@ Check text for grammar, spelling, style, and punctuation errors.
 | ----- | ---- | -------- | ----------- |
 | `text` | string | ✅ | Text to check (2–20,000 characters) |
 | `language` | string | | BCP 47 language code. Default: `en-US` |
-| `level` | string | | `default` or `picky`. Default: `default` |
-| `enabledCategories` | string | | Comma-separated category IDs to enable |
-| `disabledCategories` | string | | Comma-separated category IDs to suppress |
-| `enabledRules` | string | | Comma-separated rule IDs to force-enable |
-| `disabledRules` | string | | Comma-separated rule IDs to suppress |
-| `enabledOnly` | bool | | Run only the enabled rules/categories |
-
-**Maximum suggestions payload:**
-
-```json
-{
-  "text": "Your text here...",
-  "language": "en-US",
-  "level": "picky",
-  "enabledCategories": "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY,COMPOUNDING,MISC"
-}
-```
+| `clientId` | string | | Optional client identifier for custom dictionary filtering |
 
 **Response `200 OK`**
 
@@ -185,21 +164,6 @@ Check text for grammar, spelling, style, and punctuation errors.
   "cached": false
 }
 ```
-
-**Available categories:**
-
-| Category | What it catches |
-| -------- | --------------- |
-| `GRAMMAR` | Subject-verb agreement, tense errors |
-| `SPELLING` | Misspelled words |
-| `STYLE` | Wordy phrases, passive voice |
-| `PUNCTUATION` | Missing commas, wrong apostrophe |
-| `TYPOGRAPHY` | Quote marks, dashes, spacing |
-| `CASING` | Capitalization errors |
-| `CONFUSED_WORDS` | their/there, affect/effect |
-| `REDUNDANCY` | "past history", "end result" |
-| `COMPOUNDING` | Hyphenation errors |
-| `MISC` | Everything else |
 
 ---
 
@@ -281,8 +245,6 @@ ws://localhost:4003/v1/ws?api_key=your-api-key
   "type": "check",
   "text": "I recieve wierd emails",
   "language": "en-US",
-  "level": "picky",
-  "enabledCategories": "GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY",
   "seqId": 1
 }
 ```
@@ -292,14 +254,8 @@ ws://localhost:4003/v1/ws?api_key=your-api-key
 | `type` | string | `"check"` |
 | `text` | string | Text to check (2–20,000 chars) |
 | `language` | string | BCP 47 code. Default: `en-US` |
-| `level` | string | `default` or `picky`. Default: `picky` |
-| `enabledCategories` | string | Categories to enable. Default: all major categories |
-| `disabledCategories` | string | Categories to suppress |
-| `enabledRules` | string | Rule IDs to force-enable |
-| `disabledRules` | string | Rule IDs to suppress |
+| `clientId` | string | Optional client identifier for custom dictionary filtering |
 | `seqId` | int | Client sequence number for ordering |
-
-> **WebSocket default:** if `level` and `enabledCategories` are omitted, the server automatically uses `level=picky` with all major categories enabled for maximum accuracy.
 
 #### Receive a Result
 
@@ -345,8 +301,6 @@ function check(text, language = 'en-US') {
     type: 'check',
     text,
     language,
-    level: 'picky',
-    enabledCategories: 'GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY',
     seqId: ++seq,
   }));
 }
@@ -375,24 +329,10 @@ make test         # Run unit tests
 make test-docker  # Run tests inside Docker
 make build        # Build Docker image
 make swagger      # Regenerate Swagger docs from annotations
-make ngrams       # Download English NGrams (~14GB, improves accuracy)
 make redis-cli    # Open Redis CLI
 make redis-stats  # Show Redis cache hit/miss stats
 make clean        # Remove build artifacts
 ```
-
----
-
-## NGrams (Optional)
-
-NGrams significantly improve accuracy for context-dependent errors — *their* vs *there*, *its* vs *it's*, *then* vs *than*. They do not affect basic spell checking.
-
-```bash
-make ngrams    # Downloads ~14GB to ./ngrams/
-make restart   # Restart to load the new model
-```
-
-> Requires ~4GB additional RAM for LanguageTool. Recommended instance: `t3.large` or larger.
 
 ---
 
@@ -418,7 +358,7 @@ make swagger
 
 | Service | RAM usage |
 | ------- | --------- |
-| LanguageTool + NGrams | ~3.5–4 GB |
+| LanguageTool | ~1.5–2 GB |
 | Redis | ~150 MB |
 | Go API | ~50 MB |
 | OS buffer | ~500 MB |
@@ -448,6 +388,11 @@ ALLOWED_ORIGINS=https://yourapp.com
 ```bash
 make up-prod
 ```
+
+> **Upgrading from a previous version?** The cache key format changed (removed `level`/`enabledCategories` components). Flush stale Redis entries after deploy to avoid memory waste:
+> ```bash
+> curl -X DELETE https://api.yourdomain.com/v1/cache -H "X-API-Key: your-api-key"
+> ```
 
 Nginx starts on ports 80 + 443 with:
 - HTTP → HTTPS redirect

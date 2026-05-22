@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -134,8 +135,10 @@ func (c *Conn) readPump() {
 		}
 
 		var msg IncomingMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			c.sendError("invalid message format", 0)
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&msg); err != nil {
+			c.sendError("invalid message: "+err.Error(), 0)
 			continue
 		}
 
@@ -228,20 +231,9 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 	if lang == "" {
 		lang = "en-US"
 	}
-	level := msg.Level
-	if level == "" {
-		level = "picky"
-	}
-	motherTongue := msg.MotherTongue
-	enabledCategories := msg.EnabledCategories
-	if enabledCategories == "" {
-		// Real-time: SPELLING+GRAMMAR only for speed (~2-3x faster than full set).
-		// Client can pass enabledCategories explicitly for a thorough check.
-		enabledCategories = "SPELLING,GRAMMAR"
-	}
 
 	// Cache hit
-	cacheKey := cache.BuildKey(cachePrefix, lang, level, enabledCategories, motherTongue, msg.Text)
+	cacheKey := cache.BuildKey(cachePrefix, lang, msg.Text)
 	var cached languagetool.CheckResponse
 	hit, err := c.redis.Get(c.ctx, cacheKey, &cached)
 	if err != nil {
@@ -265,14 +257,8 @@ func (c *Conn) doCheck(msg *IncomingMessage) {
 
 	// LT check
 	result, err := c.lt.Check(c.ctx, languagetool.CheckRequest{
-		Text:               msg.Text,
-		Language:           lang,
-		Level:              level,
-		MotherTongue:       motherTongue,
-		EnabledCategories:  enabledCategories,
-		DisabledCategories: msg.DisabledCategories,
-		EnabledRules:       msg.EnabledRules,
-		DisabledRules:      msg.DisabledRules,
+		Text:     msg.Text,
+		Language: lang,
 	})
 	if err != nil {
 		if c.ctx.Err() == nil {

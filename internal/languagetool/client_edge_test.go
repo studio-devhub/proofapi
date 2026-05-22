@@ -134,7 +134,7 @@ func TestClient_Check_DifferentLanguages(t *testing.T) {
 	}
 }
 
-func TestClient_Check_PiclyLevel(t *testing.T) {
+func TestClient_Check_LevelIsHardcoded(t *testing.T) {
 	receivedLevel := ""
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
@@ -148,10 +148,10 @@ func TestClient_Check_PiclyLevel(t *testing.T) {
 	defer srv.Close()
 
 	_, err := newTestClient(srv.URL).Check(context.Background(), languagetool.CheckRequest{
-		Text: "Test", Language: "en-US", Level: "picky",
+		Text: "Test", Language: "en-US",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "picky", receivedLevel)
+	assert.Equal(t, "default", receivedLevel)
 }
 
 func TestClient_Check_MalformedResponse(t *testing.T) {

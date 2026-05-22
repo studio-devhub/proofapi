@@ -38,15 +38,8 @@ VITE_PROOF_WS_URL=wss://proofapi.tulvo.io/v1/ws
 
 export interface CheckRequest {
   text: string;
-  language?: string;           // default: "en-US"
-  level?: string;              // "default" | "picky" — default: "picky"
-  motherTongue?: string;       // native language for false-friends detection e.g. "de-DE"
-  enabledCategories?: string;  // default: all 10 categories
-  disabledCategories?: string;
-  enabledRules?: string;
-  disabledRules?: string;
-  enabledOnly?: boolean;
-  clientId?: string;           // optional: filter matches against this client's dictionary
+  language?: string;  // default: "en-US"
+  clientId?: string;  // optional: filter matches against this client's dictionary
 }
 
 export interface Match {
@@ -57,7 +50,7 @@ export interface Match {
   rule: {
     id: string;
     description: string;
-    issueType: "misspelling" | "grammar" | "style" | "typographical" | string;
+    issueType: "misspelling" | string;
     category: { id: string; name: string };
   };
   context: { text: string; offset: number; length: number };
@@ -107,7 +100,7 @@ import type { CheckRequest, CheckResponse, DictionaryWord, DictionaryListRespons
 const BASE_URL = import.meta.env.VITE_PROOF_API_URL;
 const API_KEY  = import.meta.env.VITE_PROOF_API_KEY;
 
-// ── Grammar Check ─────────────────────────────────────────
+// ── Spell Check ──────────────────────────────────────────
 
 export async function checkText(req: CheckRequest, clientId?: string): Promise<CheckResponse> {
   const res = await fetch(`${BASE_URL}/v1/check`, {
@@ -188,17 +181,6 @@ export async function clearDictionary(clientId: string): Promise<void> {
 }
 ```
 
-### Maximum suggestions request
-
-```typescript
-await checkText({
-  text: 'Your text here...',
-  language: 'en-US',
-  level: 'picky',
-  enabledCategories: 'GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY,COMPOUNDING,MISC',
-});
-```
-
 ### React Hook
 
 ```typescript
@@ -218,11 +200,7 @@ export function useProofCheck(clientId?: string) {
     setLoading(true);
     setError(null);
     try {
-      const result = await checkText(
-        { text, language, level: 'picky',
-          enabledCategories: 'GRAMMAR,SPELLING,STYLE,PUNCTUATION,TYPOGRAPHY,CASING,CONFUSED_WORDS,REDUNDANCY' },
-        clientId,
-      );
+      const result = await checkText({ text, language }, clientId);
       setMatches(result.matches);
       setCached(result.cached);
     } catch (err) {
@@ -245,11 +223,11 @@ export function useProofCheck(clientId?: string) {
 ### Component Example
 
 ```tsx
-// src/components/GrammarChecker.tsx
+// src/components/SpellChecker.tsx
 import { useState } from 'react';
 import { useProofCheck } from '@/hooks/useProofCheck';
 
-export function GrammarChecker() {
+export function SpellChecker() {
   const [text, setText] = useState('');
   const { matches, loading, error, cached, check, reset } = useProofCheck();
 
@@ -263,7 +241,7 @@ export function GrammarChecker() {
         style={{ width: '100%' }}
       />
       <button onClick={() => check(text)} disabled={loading || text.length < 2}>
-        {loading ? 'Checking...' : 'Check Grammar'}
+        {loading ? 'Checking...' : 'Check Spelling'}
       </button>
 
       {cached && <small> (from cache)</small>}
@@ -445,14 +423,14 @@ export function DictionaryPanel({ clientId }: { clientId: string }) {
 ### Full example — checker with dictionary
 
 ```tsx
-// src/components/GrammarCheckerWithDictionary.tsx
+// src/components/SpellCheckerWithDictionary.tsx
 import { useState } from 'react';
 import { useProofCheck } from '@/hooks/useProofCheck';
 import { MatchCard } from './MatchCard';
 
 const CLIENT_ID = 'usr_abc123'; // replace with actual user ID
 
-export function GrammarCheckerWithDictionary() {
+export function SpellCheckerWithDictionary() {
   const [text, setText] = useState('');
   const { matches, loading, check, reset } = useProofCheck(CLIENT_ID);
 
@@ -470,7 +448,7 @@ export function GrammarCheckerWithDictionary() {
         style={{ width: '100%' }}
       />
       <button onClick={() => check(text)} disabled={loading || text.length < 2}>
-        {loading ? 'Checking...' : 'Check Grammar'}
+        {loading ? 'Checking...' : 'Check Spelling'}
       </button>
 
       {matches.map((match, i) => (
@@ -515,8 +493,6 @@ export function GrammarCheckerWithDictionary() {
 Best for: real-time checking as the user types. The server debounces 150ms — no client-side debounce needed.
 
 > **Auth:** Connect without any credentials in the URL. Send `{"type":"auth","key":"<API_KEY>"}` as the **first message** after `onopen`. The server replies with `{"type":"ack"}` on success or `{"type":"error"}` on failure. This keeps the API key out of server logs and browser history.
->
-> **Default options:** if `level`/`enabledCategories` are omitted, the server automatically uses `level=picky` with all major categories for maximum accuracy.
 
 ### WebSocket Hook
 
@@ -587,7 +563,6 @@ export function useSpellCheck() {
       type: 'check',
       text,
       language,
-      // omit level/enabledCategories to use server defaults (picky + all categories)
       ...(clientId ? { clientId } : {}),
       seqId: ++seqRef.current,
     }));
@@ -649,7 +624,7 @@ export function LiveEditor() {
 
 The [`examples/react/`](examples/react/) example shows full TipTap integration with:
 
-- **Wavy underlines** — colour-coded by issue type (red=spelling, yellow=grammar, blue=style, orange=punctuation)
+- **Wavy underlines** — red underlines on misspelled words
 - **VS Code-style suggestion popup** — dark theme, anchored to the word, keyboard navigable
 - **Cmd+.** (or **Ctrl+.**) shortcut to open suggestions at cursor position
 - **Click** on underlined word to open popup
@@ -696,10 +671,7 @@ import { getSegments } from '@/lib/highlight';
 import type { Match } from '@/types/proof';
 
 const UNDERLINE: Record<string, string> = {
-  misspelling:   'underline wavy #ef4444',
-  grammar:       'underline wavy #eab308',
-  style:         'underline wavy #3b82f6',
-  typographical: 'underline wavy #f97316',
+  misspelling: 'underline wavy #ef4444',
 };
 
 export function HighlightedText({ text, matches }: { text: string; matches: Match[] }) {
@@ -761,7 +733,6 @@ Full list: `GET /v1/languages`
 | -------- | -------- |
 | Check on button click | REST `POST /v1/check` via `useProofCheck` |
 | Real-time as user types | WebSocket via `useSpellCheck` |
-| Maximum suggestions | `level=picky` + `enabledCategories=GRAMMAR,SPELLING,STYLE,...` |
 | Rich text editor | TipTap example in `examples/react/` |
 | Highlight errors inline | `getSegments()` + `HighlightedText` |
 | Per-user dictionary filtering | Pass `clientId` to `useProofCheck` or WS `check()` |
